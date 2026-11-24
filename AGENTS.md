@@ -40,20 +40,22 @@ Its single responsibility is to isolate agent subprocesses, terminals, and works
    - `AbortSignal` cancellation MUST remove queued waiters immediately and release acquired slots without leaks.
 
 5. **Zero External Runtime Dependencies**
-   - Communicate with the Linux Docker Engine over `/var/run/docker.sock` using Node.js built-in `node:http` and `node:net`.
+   - Communicate with Docker Engine over Linux Unix socket (`/var/run/docker.sock`), Windows Docker Desktop named pipe (`\\.\pipe\docker_engine`), or Windows-to-WSL2 `wsl.exe` Duplex socket bridge using Node.js built-ins (`node:http`, `node:child_process`, `node:stream`).
    - Keep the production dependency footprint minimal and auditable.
 
 ## Repository Layout
 
 ```text
 src/
-  types.ts                      Public config, mount, security, metrics, and error contracts
+  types.ts                      Public config, mount, security, WSL, metrics, and error contracts
   workspace/
     workspace-policy.ts         Canonicalization, allowedBaseDirs allowlist, symlink guard, path mapping
+    wsl-paths.ts                Windows drive / WSL UNC <-> WSL2 POSIX path conversion & denylist
   scheduler/
     fair-scheduler.ts           Two-tier container/task scheduler, per-workspace fair queue, LRU eviction
   docker/
-    socket-client.ts            Native HTTP-over-Unix-Socket Docker Engine API + multiplexed stream demuxer
+    socket-client.ts            Native HTTP-over-Socket/NPipe/WSL Docker Engine API + stream demuxer
+    wsl-bridge.ts               Dependency-free Windows -> WSL2 Unix-socket Duplex bridge via wsl.exe
     stream-collector.ts         DSH SubprocessOutputReader (bounded tail ring + optional spill file)
     runtime-pool.ts             DockerRuntimePool orchestrating containers, exec, PTY, TTL, orphan sweep
   subprocess/

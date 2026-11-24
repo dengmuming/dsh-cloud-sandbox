@@ -2,9 +2,9 @@
 
 English | [简体中文](./README.zh.md)
 
-**Linux Docker execution-sandbox runtime plugin for DeepSeek Harness (`@deepseek-ai/dsh`).**
+**Linux & Windows WSL2 Docker execution-sandbox runtime plugin for DeepSeek Harness (`@deepseek-ai/dsh`).**
 
-`dsh-cloud-sandbox` isolates agent commands, interactive terminals, and user-loaded Skill scripts inside hardened Linux Docker containers — managed purely by **working directory** (zero user-account coupling), with **host-wide concurrency limits and per-workspace fair queuing** built for cloud multi-tenant deployments.
+`dsh-cloud-sandbox` isolates agent commands, interactive terminals, and user-loaded Skill scripts inside hardened Linux Docker containers — managed purely by **working directory** (zero user-account coupling), with **host-wide concurrency limits and per-workspace fair queuing** built for cloud multi-tenant deployments (supporting native Linux `/var/run/docker.sock`, Windows Docker Desktop WSL2 named pipe `\\.\pipe\docker_engine`, and direct Windows -> WSL2 Docker Engine bridging via `wsl.exe`).
 
 ## Why This Plugin Exists
 
@@ -137,6 +137,31 @@ await dockerPool.initialize()
 // Inside each isolated Cordis Context:
 await ctx.plugin(DockerSubprocessRuntime, { pool: dockerPool, ownPool: false })
 await ctx.plugin(DockerShellExecutor, { allowDangerFullAccess: false })
+```
+
+## Windows + WSL2 Support
+
+`dsh-cloud-sandbox` supports all three Windows/WSL2 setups with zero external dependencies:
+
+1. **Running DSH inside WSL2 Linux**: Works identically to native Linux via `/var/run/docker.sock`.
+2. **Running DSH natively on Windows with Docker Desktop (WSL2 backend)**: `transport: 'auto'` (or `'npipe'`) connects directly to `\\.\pipe\docker_engine`, translates Windows drive paths (`D:\work\ws1`) and WSL UNC paths (`\\wsl.localhost\Ubuntu\...`) into POSIX container paths (`/mnt/d/work/ws1`), and uses structured `HostConfig.Mounts` to avoid drive-letter colon ambiguity.
+3. **Running DSH natively on Windows with Docker Engine inside WSL2 (no Docker Desktop)**: Set `transport: 'wsl'` (or configure `wsl: { distro: 'Ubuntu-24.04' }`, or rely on `transport: 'auto'` fallback). The plugin bridges `node:http` directly to `/var/run/docker.sock` inside WSL2 over `wsl.exe` (`socat` → `python3` → `node` auto-fallback) with no open TCP ports:
+
+```ts
+const dockerPool = createDockerRuntimePool({
+  image: 'dsh-cloud-sandbox-runtime:latest',
+  transport: 'wsl',
+  wsl: {
+    distro: 'Ubuntu-24.04', // optional: omit for default WSL2 distro
+    socketPath: '/var/run/docker.sock',
+    mountPrefix: '/mnt',
+  },
+  workspace: {
+    allowedBaseDirs: ['D:\\workspaces'],
+    readOnlyMounts: ['D:\\skills'],
+  },
+})
+await dockerPool.initialize()
 ```
 
 ## Development & Verification

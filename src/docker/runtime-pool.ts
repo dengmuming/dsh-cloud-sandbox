@@ -27,6 +27,7 @@ import type {
   ContainerLifecycleMode,
   DockerRuntimePoolConfig,
   FairSchedulerMetrics,
+  HostMountPathStyle,
   WorkspaceAccessMode,
 } from '../types.ts'
 import { DockerSandboxError } from '../types.ts'
@@ -38,8 +39,10 @@ import {
   POOL_ID_LABEL,
   UnixSocketDockerClient,
   WORKSPACE_ID_LABEL,
+  type ConcreteDockerTransport,
   type DockerClient,
 } from './socket-client.ts'
+import { DEFAULT_WINDOWS_DOCKER_PIPE, DEFAULT_WSL_DOCKER_SOCKET } from './wsl-bridge.ts'
 import { BoundedStreamCollector } from './stream-collector.ts'
 
 export interface ManagedContainer {
@@ -113,12 +116,14 @@ export function scrubEnvMap(env: Readonly<Record<string, string | undefined>>): 
 export class DockerRuntimePool {
   readonly poolId: string
   readonly lifecycle: ContainerLifecycleMode
-  readonly policy: WorkspacePolicy
+  policy: WorkspacePolicy
   readonly defaultShell: string
   readonly defaultPath: string
+  private activeTransport: ConcreteDockerTransport
 
   private readonly config: DockerRuntimePoolConfig
-  private readonly docker: DockerClient
+  private readonly hasInjectedClient: boolean
+  private docker: DockerClient
   private readonly scheduler: FairScheduler<ManagedContainer>
   private readonly liveHandles = new Set<{ terminate(): void; done: Promise<unknown> }>()
   private readonly liveTerminals = new Set<SubprocessTerminalHandle>()
@@ -129,15 +134,18 @@ export class DockerRuntimePool {
       throw new Error('dsh-cloud-sandbox: config.image must be a non-empty Docker image name')
     }
     this.config = config
+    this.hasInjectedClient = dockerClient !== undefined
     this.poolId = config.poolId ?? 'default'
     this.lifecycle = config.lifecycle ?? 'warm'
     this.defaultShell = config.defaultShell ?? '/bin/bash'
     this.defaultPath = config.defaultPath ?? DEFAULT_CONTAINER_PATH
-    this.policy = new WorkspacePolicy({
-      ...config.workspace,
-      dockerSocketPath: config.workspace.dockerSocketPath ?? config.socketPath ?? '/var/run/docker.sock',
+    this.activeTransport = resolveInitialTransport(config)
+    this.policy = this.buildWorkspacePolicy(this.activeTransport)
+    this.docker = dockerClient ?? new UnixSocketDockerClient({
+      transport: this.activeTransport,
+      socketPath: config.socketPath,
+      wsl: config.wsl,
     })
-    this.docker = dockerClient ?? new UnixSocketDockerClient({ socketPath: config.socketPath })
     this.scheduler = new FairScheduler<ManagedContainer>({
       config: config.scheduler,
       onEvent: config.onSchedulerEvent,
@@ -147,10 +155,68 @@ export class DockerRuntimePool {
     })
   }
 
-  /** Verify Docker daemon reachability and sweep stale orphan containers belonging to this poolId. */
+  /** Active Docker transport selected for this pool (`'unix'`, `'npipe'`, or `'wsl'`). */
+  get transport(): ConcreteDockerTransport {
+    return this.activeTransport
+  }
+
+  private buildWorkspacePolicy(transport: ConcreteDockerTransport): WorkspacePolicy {
+    const inferredStyle: HostMountPathStyle = transport === 'wsl'
+      ? 'wsl'
+      : transport === 'npipe'
+        ? 'win32-npipe'
+        : 'posix'
+    const socketPath = this.config.workspace.dockerSocketPath
+      ?? this.config.socketPath
+      ?? (transport === 'npipe' ? DEFAULT_WINDOWS_DOCKER_PIPE : (this.config.wsl?.socketPath ?? DEFAULT_WSL_DOCKER_SOCKET))
+    return new WorkspacePolicy({
+      ...this.config.workspace,
+      wslMountPrefix: this.config.workspace.wslMountPrefix ?? this.config.wsl?.mountPrefix,
+      hostPathStyle: this.config.workspace.hostPathStyle && this.config.workspace.hostPathStyle !== 'auto'
+        ? this.config.workspace.hostPathStyle
+        : inferredStyle,
+      dockerSocketPath: socketPath,
+    })
+  }
+
+  /**
+   * Verify Docker daemon reachability and sweep stale orphan containers belonging to this poolId.
+   * On Windows with `transport: 'auto'` (and no explicit `wsl` config), probes Docker Desktop
+   * named pipe first and transparently falls back to the WSL2 Unix-socket bridge if unavailable.
+   */
   async initialize(signal?: AbortSignal): Promise<void> {
     this.assertNotDisposed()
-    await this.docker.ping(signal)
+    try {
+      await this.docker.ping(signal)
+    } catch (primaryError) {
+      const canFallbackToWsl = !this.hasInjectedClient
+        && process.platform === 'win32'
+        && (this.config.transport ?? 'auto') === 'auto'
+        && this.activeTransport === 'npipe'
+
+      if (!canFallbackToWsl) {
+        throw primaryError
+      }
+
+      const wslClient = new UnixSocketDockerClient({
+        transport: 'wsl',
+        socketPath: this.config.wsl?.socketPath ?? DEFAULT_WSL_DOCKER_SOCKET,
+        wsl: this.config.wsl,
+      })
+      try {
+        await wslClient.ping(signal)
+      } catch (wslError) {
+        throw new DockerSandboxError(
+          'DOCKER_UNAVAILABLE',
+          `Docker daemon unavailable on Windows named pipe (${DEFAULT_WINDOWS_DOCKER_PIPE}) and WSL2 fallback: ${wslError instanceof Error ? wslError.message : String(wslError)}`,
+          { cause: wslError },
+        )
+      }
+      this.docker = wslClient
+      this.activeTransport = 'wsl'
+      this.policy = this.buildWorkspacePolicy('wsl')
+    }
+
     if (this.config.sweepOrphansOnStart !== false) {
       await this.sweepOrphanContainers(signal)
     }
@@ -636,7 +702,9 @@ export class DockerRuntimePool {
   }
 
   private mapArgvPaths(argv: readonly string[], resolved: ResolvedWorkspace): string[] {
-    if (resolved.pathMode === 'mirror') return [...argv]
+    if (resolved.pathMode === 'mirror' && resolved.hostWorkspaceRoot === resolved.containerWorkspaceRoot) {
+      return [...argv]
+    }
     return argv.map((arg) => resolved.toContainerPath(arg) ?? arg)
   }
 
@@ -719,6 +787,16 @@ export class DockerRuntimePool {
     await this.docker.stopContainer(containerId, 2).catch(() => {})
     await this.docker.removeContainer(containerId, true).catch(() => {})
   }
+}
+
+function resolveInitialTransport(config: DockerRuntimePoolConfig): ConcreteDockerTransport {
+  if (config.transport && config.transport !== 'auto') {
+    return config.transport
+  }
+  if (process.platform !== 'win32') {
+    return 'unix'
+  }
+  return config.wsl !== undefined ? 'wsl' : 'npipe'
 }
 
 function delay(ms: number): Promise<void> {

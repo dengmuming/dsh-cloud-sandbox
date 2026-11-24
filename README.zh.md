@@ -2,9 +2,9 @@
 
 [English](./README.md) | 简体中文
 
-**面向 DeepSeek Harness（`@deepseek-ai/dsh`）的云端 Linux Docker 执行沙盒插件。**
+**面向 DeepSeek Harness（`@deepseek-ai/dsh`）的云端 Linux & Windows WSL2 Docker 执行沙盒插件。**
 
-`dsh-cloud-sandbox` 将 Agent 的命令执行、交互式终端以及用户自定义 Skill 中的脚本隔离运行在加固的 Linux Docker 容器内——**仅按工作目录（`workspaceRoot`）管理、完全无用户属性**，并内置面向云端多人共享部署的**宿主机级并发限流与按工作目录公平排队调度**。
+`dsh-cloud-sandbox` 将 Agent 的命令执行、交互式终端以及用户自定义 Skill 中的脚本隔离运行在加固的 Linux Docker 容器内——**仅按工作目录（`workspaceRoot`）管理、完全无用户属性**，并内置面向云端多人共享部署的**宿主机级并发限流与按工作目录公平排队调度**（同时支持原生 Linux `/var/run/docker.sock`、Windows Docker Desktop WSL2 命名管道 `\\.\pipe\docker_engine`，以及无 Docker Desktop 时的原生 Windows → WSL2 Docker Engine 直连桥接）。
 
 ## 为什么需要这个插件
 
@@ -137,6 +137,31 @@ await dockerPool.initialize()
 // 在每个独立的运行时 Context 中挂载薄适配器：
 await ctx.plugin(DockerSubprocessRuntime, { pool: dockerPool, ownPool: false })
 await ctx.plugin(DockerShellExecutor, { allowDangerFullAccess: false })
+```
+
+## Windows + WSL2 支持
+
+本插件零外部依赖支持全部三种 Windows / WSL2 运行拓扑：
+
+1. **DSH 直接运行在 WSL2 Linux 内**：与原生 Linux 完全一致，直连 `/var/run/docker.sock`。
+2. **DSH 原生运行在 Windows + Docker Desktop（WSL2 后端）**：`transport: 'auto'`（或 `'npipe'`）直连命名管道 `\\.\pipe\docker_engine`，自动把 Windows 盘符路径（`D:\work\ws1`）和 WSL UNC 路径（`\\wsl.localhost\Ubuntu\...`）映射为容器内合法 POSIX 路径（`/mnt/d/work/ws1`），并通过结构化 `HostConfig.Mounts` 规避盘符冒号解析冲突。
+3. **DSH 原生运行在 Windows + 纯 WSL2 内 Docker Engine（无需 Docker Desktop）**：设置 `transport: 'wsl'`（或配置 `wsl: { distro: 'Ubuntu-24.04' }`，或依赖 `transport: 'auto'` 自动回退），通过 `wsl.exe` 零 TCP 端口直连 WSL2 内部的 `/var/run/docker.sock`（自动按 `socat` → `python3` → `node` 探测桥接工具）：
+
+```ts
+const dockerPool = createDockerRuntimePool({
+  image: 'dsh-cloud-sandbox-runtime:latest',
+  transport: 'wsl',
+  wsl: {
+    distro: 'Ubuntu-24.04', // 可选，不填则使用默认 WSL2 发行版
+    socketPath: '/var/run/docker.sock',
+    mountPrefix: '/mnt',
+  },
+  workspace: {
+    allowedBaseDirs: ['D:\\workspaces'],
+    readOnlyMounts: ['D:\\skills'],
+  },
+})
+await dockerPool.initialize()
 ```
 
 ## 开发与验证

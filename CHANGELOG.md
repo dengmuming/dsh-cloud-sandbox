@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Windows + WSL2 Support (`src/workspace/wsl-paths.ts`, `src/docker/wsl-bridge.ts`)**:
+  - Multi-transport Docker client (`transport: 'auto' | 'unix' | 'npipe' | 'wsl'`) supporting native Linux Unix sockets, Windows Docker Desktop WSL2 named pipes (`\\.\pipe\docker_engine`), and dependency-free Windows-to-WSL2 `wsl.exe` Unix-socket Duplex bridging (`socat` → `python3` → `node` fallback).
+  - Automatic Windows drive (`D:\...`) and WSL UNC (`\\wsl.localhost\<distro>\...`, `\\wsl$\<distro>\...`) path conversion into POSIX container/WSL paths, plus structured `HostConfig.Mounts` on Windows named pipes and strict rejection of non-WSL SMB shares, bare drive roots, `C:\Windows`, and WSL Docker Desktop internal mounts.
+
 ## [0.1.0] - 2026-11-24
 
 ### Added

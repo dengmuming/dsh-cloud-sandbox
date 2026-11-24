@@ -6,11 +6,31 @@
 export type PathMode = 'mirror' | 'remap'
 export type ContainerLifecycleMode = 'warm' | 'ephemeral'
 export type WorkspaceAccessMode = 'rw' | 'ro'
+export type DockerTransportMode = 'auto' | 'unix' | 'npipe' | 'wsl'
+export type HostMountPathStyle = 'auto' | 'posix' | 'wsl' | 'win32-npipe'
+
+export interface WslConfig {
+  /** WSL2 distribution name (e.g. `'Ubuntu-24.04'`). Omit to use the default WSL2 distribution. */
+  readonly distro?: string
+  /** Optional Linux user inside WSL2 when invoking `wsl.exe`. */
+  readonly user?: string
+  /** Path to `wsl.exe` on Windows. Default: `'wsl.exe'`. */
+  readonly wslBinary?: string
+  /** Docker Engine Unix socket path inside WSL2. Default: `'/var/run/docker.sock'`. */
+  readonly socketPath?: string
+  /** Mount prefix where Windows drives appear inside WSL2. Default: `'/mnt'`. */
+  readonly mountPrefix?: string
+}
 
 export interface BindMountSpec {
-  /** Canonical absolute path on the Linux host. */
+  /** Canonical absolute path on the host running Node.js (Linux POSIX or Windows path). */
   readonly hostPath: string
-  /** Absolute path inside the container. */
+  /**
+   * Source path formatted for the target Docker daemon (e.g., `/mnt/d/...` when bridging to WSL2
+   * Docker Engine from Windows, or `hostPath` directly on native Linux / Docker Desktop npipe).
+   */
+  readonly dockerHostPath?: string
+  /** Absolute POSIX path inside the Linux container. */
   readonly containerPath: string
   /** Whether the bind mount is read-only. */
   readonly readOnly: boolean
@@ -47,6 +67,16 @@ export interface WorkspacePolicyConfig {
   readonly dockerSocketPath?: string
   /** Optional container path used for workspace root when `pathMode === 'remap'`. Default: `/workspace`. */
   readonly containerWorkspacePath?: string
+  /** Prefix where Windows drives are mounted inside WSL2 (used when mapping Windows paths). Default: `'/mnt'`. */
+  readonly wslMountPrefix?: string
+  /**
+   * How bind-mount source paths (`dockerHostPath`) are formatted for Docker Engine:
+   * - `'auto'` (default): POSIX on Linux/macOS, Windows path on `npipe`, WSL `/mnt/<drive>` on `wsl`.
+   * - `'wsl'`: convert Windows drive & `\\wsl.localhost\...` paths to Linux WSL paths.
+   * - `'win32-npipe'`: keep Windows host paths for Docker Desktop named pipe mounts.
+   * - `'posix'`: native Linux/macOS POSIX paths.
+   */
+  readonly hostPathStyle?: HostMountPathStyle
 }
 
 export interface ContainerSecurityConfig {
@@ -123,8 +153,19 @@ export interface FairSchedulerMetrics {
 export interface DockerRuntimePoolConfig {
   /** Docker image for sandbox containers (e.g., `'dsh-cloud-sandbox-runtime:latest'`). */
   readonly image: string
-  /** Linux Docker Engine Unix socket path. Default: `'/var/run/docker.sock'`. */
+  /**
+   * Transport used to reach Docker Engine:
+   * - `'auto'` (default): `'unix'` on Linux/macOS; on Windows uses `'wsl'` when `wsl` is configured,
+   *   otherwise tries Docker Desktop `'npipe'` (`\\.\pipe\docker_engine`) and falls back to `'wsl'`.
+   * - `'unix'`: native Linux/macOS Unix socket (`/var/run/docker.sock`).
+   * - `'npipe'`: Windows Docker Desktop named pipe (`\\.\pipe\docker_engine`).
+   * - `'wsl'`: bridge from native Windows to Docker Engine inside WSL2 via `wsl.exe`.
+   */
+  readonly transport?: DockerTransportMode
+  /** Docker Engine socket/pipe path. Defaults to `/var/run/docker.sock` (`unix`/`wsl`) or `\\.\pipe\docker_engine` (`npipe`). */
   readonly socketPath?: string
+  /** WSL2 configuration when running on Windows with Docker Engine inside WSL2. */
+  readonly wsl?: WslConfig
   /** Stable identifier for this pool used in container labels for orphan cleanup. Default: `'default'`. */
   readonly poolId?: string
   /** Container lifecycle mode: `'warm'` (per-workspace reuse) or `'ephemeral'` (per-task). Default: `'warm'`. */

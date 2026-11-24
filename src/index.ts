@@ -19,6 +19,17 @@ export {
   type ResolvedWorkspace,
 } from './workspace/workspace-policy.ts'
 export {
+  isDisallowedWindowsUncPath,
+  isSensitiveWindowsOrWslPath,
+  isWindowsDrivePath,
+  normalizeWslMountPrefix,
+  parseWslUncPath,
+  toContainerPosixPath,
+  windowsPathToWslPath,
+  wslPathToWindowsPath,
+  type ParsedWslUncPath,
+} from './workspace/wsl-paths.ts'
+export {
   FairScheduler,
   type EphemeralContainerSlotLease,
   type FairSchedulerOptions,
@@ -34,6 +45,7 @@ export {
   WORKSPACE_ID_LABEL,
   buildHardenedContainerPayload,
   demuxDockerStream,
+  type ConcreteDockerTransport,
   type DockerClient,
   type DockerContainerCreateRequest,
   type DockerContainerInspect,
@@ -41,7 +53,16 @@ export {
   type DockerExecCreateRequest,
   type DockerExecInspect,
   type DockerExecStream,
+  type UnixSocketDockerClientOptions,
 } from './docker/socket-client.ts'
+export {
+  DEFAULT_WINDOWS_DOCKER_PIPE,
+  DEFAULT_WSL_DOCKER_SOCKET,
+  WslBridgeSocket,
+  buildWslBridgeCommand,
+  createWslSocketStream,
+  type WslBridgeCommand,
+} from './docker/wsl-bridge.ts'
 export { BoundedStreamCollector } from './docker/stream-collector.ts'
 export {
   DockerRuntimePool,

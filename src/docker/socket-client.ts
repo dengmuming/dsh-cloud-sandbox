@@ -8,8 +8,14 @@
 import http from 'node:http'
 import type { Duplex } from 'node:stream'
 import { PassThrough, Readable, Writable } from 'node:stream'
-import type { BindMountSpec, ContainerSecurityConfig } from '../types.ts'
+import type { BindMountSpec, ContainerSecurityConfig, DockerTransportMode, WslConfig } from '../types.ts'
 import { DockerSandboxError, DockerTransportError } from '../types.ts'
+import { isWindowsDrivePath, parseWslUncPath } from '../workspace/wsl-paths.ts'
+import {
+  DEFAULT_WINDOWS_DOCKER_PIPE,
+  DEFAULT_WSL_DOCKER_SOCKET,
+  createWslSocketStream,
+} from './wsl-bridge.ts'
 
 export const MANAGED_LABEL = 'dsh.sandbox.managed'
 export const POOL_ID_LABEL = 'dsh.sandbox.pool_id'
@@ -103,10 +109,28 @@ export function buildHardenedContainerPayload(request: DockerContainerCreateRequ
 
   const capDrop = Array.from(new Set(['ALL', ...(sec.capDrop ?? [])]))
   const securityOpt = Array.from(new Set(['no-new-privileges:true', ...(sec.securityOpt ?? [])]))
-  const binds = request.mounts.map(m => `${m.hostPath}:${m.containerPath}:${m.readOnly ? 'ro' : 'rw'}`)
+
+  // Use structured HostConfig.Mounts when any source path is a Windows drive/UNC path
+  // (avoids colon-parsing ambiguity on Windows Docker Desktop named pipes), and classic
+  // HostConfig.Binds for POSIX / WSL2 paths.
+  const hasWindowsSource = request.mounts.some((m) => {
+    const src = m.dockerHostPath ?? m.hostPath
+    return isWindowsDrivePath(src) || parseWslUncPath(src) !== undefined
+  })
 
   const hostConfig: Record<string, unknown> = {
-    Binds: binds,
+    ...(hasWindowsSource
+      ? {
+        Mounts: request.mounts.map(m => ({
+          Type: 'bind',
+          Source: m.dockerHostPath ?? m.hostPath,
+          Target: m.containerPath,
+          ReadOnly: m.readOnly,
+        })),
+      }
+      : {
+        Binds: request.mounts.map(m => `${m.dockerHostPath ?? m.hostPath}:${m.containerPath}:${m.readOnly ? 'ro' : 'rw'}`),
+      }),
     CapDrop: capDrop,
     SecurityOpt: securityOpt,
     ReadonlyRootfs: readonlyRootfs,
@@ -190,13 +214,52 @@ export function demuxDockerStream(
   })
 }
 
+export type ConcreteDockerTransport = Exclude<DockerTransportMode, 'auto'>
+
+export interface UnixSocketDockerClientOptions {
+  /** Concrete transport: `'unix'` (Linux/macOS), `'npipe'` (Windows Docker Desktop), or `'wsl'` (Windows -> WSL2). */
+  readonly transport?: ConcreteDockerTransport
+  /** Socket/pipe path (`unix` default `/var/run/docker.sock`, `npipe` default `\\.\pipe\docker_engine`). */
+  readonly socketPath?: string
+  /** WSL2 configuration when `transport === 'wsl'`. */
+  readonly wsl?: WslConfig
+  /** Docker Engine API version prefix. Default: `'v1.45'`. */
+  readonly apiVersion?: string
+}
+
 export class UnixSocketDockerClient implements DockerClient {
-  private readonly socketPath: string
+  readonly transport: ConcreteDockerTransport
+  readonly socketPath: string
+  private readonly wsl?: WslConfig
   private readonly apiVersion: string
 
-  constructor(options: { readonly socketPath?: string; readonly apiVersion?: string } = {}) {
-    this.socketPath = options.socketPath ?? '/var/run/docker.sock'
+  constructor(options: UnixSocketDockerClientOptions = {}) {
+    this.transport = options.transport ?? (process.platform === 'win32' ? 'npipe' : 'unix')
+    this.wsl = options.wsl
+    this.socketPath = options.socketPath ?? (
+      this.transport === 'npipe'
+        ? DEFAULT_WINDOWS_DOCKER_PIPE
+        : (options.wsl?.socketPath ?? DEFAULT_WSL_DOCKER_SOCKET)
+    )
     this.apiVersion = options.apiVersion ?? 'v1.45'
+  }
+
+  private endpointLabel(): string {
+    if (this.transport === 'wsl') {
+      const distro = this.wsl?.distro ? `distro ${this.wsl.distro}` : 'default distro'
+      return `WSL2 (${distro}) ${this.socketPath}`
+    }
+    return this.socketPath
+  }
+
+  private httpConnectionOptions(): Pick<http.RequestOptions, 'socketPath' | 'agent'> {
+    if (this.transport === 'wsl') {
+      const wslCfg: WslConfig = { ...this.wsl, socketPath: this.socketPath }
+      const agent = new http.Agent({ keepAlive: false })
+      agent.createConnection = () => createWslSocketStream(wslCfg) as unknown as import('node:net').Socket
+      return { agent }
+    }
+    return { socketPath: this.socketPath }
   }
 
   async ping(signal?: AbortSignal): Promise<void> {
@@ -209,7 +272,7 @@ export class UnixSocketDockerClient implements DockerClient {
       if (error instanceof DockerSandboxError) throw error
       throw new DockerSandboxError(
         'DOCKER_UNAVAILABLE',
-        `Docker daemon is unavailable at ${this.socketPath}: ${error instanceof Error ? error.message : String(error)}`,
+        `Docker daemon is unavailable at ${this.endpointLabel()}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       )
     }
@@ -331,7 +394,7 @@ export class UnixSocketDockerClient implements DockerClient {
 
     return new Promise<DockerExecStream>((resolve, reject) => {
       const req = http.request({
-        socketPath: this.socketPath,
+        ...this.httpConnectionOptions(),
         method: 'POST',
         path: `/${this.apiVersion}/exec/${encodeURIComponent(execId)}/start`,
         headers: {
@@ -492,7 +555,7 @@ export class UnixSocketDockerClient implements DockerClient {
         headers['Content-Length'] = Buffer.byteLength(payload)
       }
       const req = http.request(
-        { socketPath: this.socketPath, method, path, headers },
+        { ...this.httpConnectionOptions(), method, path, headers },
         (res) => {
           const chunks: Buffer[] = []
           res.on('data', (c: Buffer) => chunks.push(c))

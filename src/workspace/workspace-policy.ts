@@ -12,8 +12,23 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, posix, relative, resolve, sep } from 'node:path'
-import type { BindMountSpec, PathMode, WorkspaceAccessMode, WorkspacePolicyConfig } from '../types.ts'
+import type {
+  BindMountSpec,
+  HostMountPathStyle,
+  PathMode,
+  WorkspaceAccessMode,
+  WorkspacePolicyConfig,
+} from '../types.ts'
 import { WorkspacePolicyError } from '../types.ts'
+import {
+  isDisallowedWindowsUncPath,
+  isSensitiveWindowsOrWslPath,
+  isWindowsDrivePath,
+  normalizeWslMountPrefix,
+  parseWslUncPath,
+  toContainerPosixPath,
+  windowsPathToWslPath,
+} from './wsl-paths.ts'
 
 const SENSITIVE_LINUX_PREFIXES = [
   '/etc',
@@ -63,7 +78,10 @@ export function canonicalizeHostPath(inputPath: string): string {
   if (inputPath.includes('\0')) {
     throw new WorkspacePolicyError('path must not contain NUL bytes')
   }
-  if (!isAbsolute(inputPath)) {
+  if (isDisallowedWindowsUncPath(inputPath)) {
+    throw new WorkspacePolicyError(`refusing non-WSL Windows UNC/device path: ${JSON.stringify(inputPath)}`)
+  }
+  if (!isAbsolute(inputPath) && !isWindowsDrivePath(inputPath) && !parseWslUncPath(inputPath)) {
     throw new WorkspacePolicyError(`path must be absolute: ${JSON.stringify(inputPath)}`)
   }
   const normalized = resolve(inputPath)
@@ -100,7 +118,8 @@ export function computeWorkspaceId(canonicalWorkspaceRoot: string): string {
   return createHash('sha256').update(toPosixPath(canonicalWorkspaceRoot)).digest('hex').slice(0, 16)
 }
 
-function isSensitiveHostPath(canonicalPath: string, dockerSocketPath: string): boolean {
+function isSensitiveHostPath(canonicalPath: string, dockerSocketPath: string, wslMountPrefix: string): boolean {
+  if (isSensitiveWindowsOrWslPath(canonicalPath, wslMountPrefix)) return true
   const rawPosix = toPosixPath(canonicalPath).replace(/\/+$/, '') || '/'
   const p = rawPosix.replace(/^[a-zA-Z]:/, '') || '/'
   if (p === '/') return true
@@ -122,6 +141,8 @@ export class WorkspacePolicy {
   private readonly pathMode: PathMode
   private readonly dockerSocketPath: string
   private readonly containerWorkspacePath: string
+  private readonly wslMountPrefix: string
+  private readonly hostPathStyle: Exclude<HostMountPathStyle, 'auto'>
 
   constructor(config: WorkspacePolicyConfig) {
     if (!Array.isArray(config.allowedBaseDirs) || config.allowedBaseDirs.length === 0) {
@@ -129,6 +150,10 @@ export class WorkspacePolicy {
     }
     this.dockerSocketPath = config.dockerSocketPath ?? '/var/run/docker.sock'
     this.pathMode = config.pathMode ?? 'mirror'
+    this.wslMountPrefix = normalizeWslMountPrefix(config.wslMountPrefix ?? '/mnt')
+    this.hostPathStyle = config.hostPathStyle && config.hostPathStyle !== 'auto'
+      ? config.hostPathStyle
+      : (process.platform === 'win32' ? 'win32-npipe' : 'posix')
     this.containerWorkspacePath = posix.normalize(config.containerWorkspacePath ?? '/workspace')
     if (!this.containerWorkspacePath.startsWith('/') || this.containerWorkspacePath === '/') {
       throw new WorkspacePolicyError(`containerWorkspacePath must be a non-root POSIX absolute path: ${JSON.stringify(this.containerWorkspacePath)}`)
@@ -137,7 +162,7 @@ export class WorkspacePolicy {
     const bases: string[] = []
     for (const dir of config.allowedBaseDirs) {
       const canonical = canonicalizeHostPath(dir)
-      if (isSensitiveHostPath(canonical, this.dockerSocketPath)) {
+      if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
         throw new WorkspacePolicyError(`refusing sensitive host directory in allowedBaseDirs: ${JSON.stringify(dir)}`)
       }
       bases.push(canonical)
@@ -147,7 +172,7 @@ export class WorkspacePolicy {
     const roMounts: string[] = []
     for (const mount of config.readOnlyMounts ?? []) {
       const canonical = canonicalizeHostPath(mount)
-      if (isSensitiveHostPath(canonical, this.dockerSocketPath)) {
+      if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
         throw new WorkspacePolicyError(`refusing sensitive host directory in readOnlyMounts: ${JSON.stringify(mount)}`)
       }
       roMounts.push(canonical)
@@ -160,7 +185,7 @@ export class WorkspacePolicy {
   /** Validate that a raw path is allowed under `allowedBaseDirs` (and optionally read-only mounts for reads). */
   assertPathAllowed(rawPath: string, options: { allowReadOnlyMounts?: boolean; workspaceRoot?: string } = {}): string {
     const canonical = canonicalizeHostPath(rawPath)
-    if (isSensitiveHostPath(canonical, this.dockerSocketPath)) {
+    if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
       throw new WorkspacePolicyError(`access to sensitive host path is denied: ${JSON.stringify(rawPath)}`)
     }
     if (this.allowedBases.some(base => isPathContained(canonical, base))) {
@@ -182,7 +207,7 @@ export class WorkspacePolicy {
     let hostWorkspaceRoot = canonicalCwd
     if (this.resolveWorkspaceRootFn) {
       const candidateRoot = canonicalizeHostPath(this.resolveWorkspaceRootFn(canonicalCwd))
-      if (isSensitiveHostPath(candidateRoot, this.dockerSocketPath)) {
+      if (isSensitiveHostPath(candidateRoot, this.dockerSocketPath, this.wslMountPrefix)) {
         throw new WorkspacePolicyError(`resolved workspace root is a sensitive host path: ${JSON.stringify(candidateRoot)}`)
       }
       if (!this.allowedBases.some(base => isPathContained(candidateRoot, base))) {
@@ -199,11 +224,12 @@ export class WorkspacePolicy {
 
     const mounts: BindMountSpec[] = []
     const containerWorkspaceRoot = this.pathMode === 'mirror'
-      ? toPosixPath(hostWorkspaceRoot)
+      ? toContainerPosixPath(hostWorkspaceRoot, this.wslMountPrefix)
       : this.containerWorkspacePath
 
     mounts.push({
       hostPath: hostWorkspaceRoot,
+      dockerHostPath: this.formatDockerHostPath(hostWorkspaceRoot),
       containerPath: containerWorkspaceRoot,
       readOnly: accessMode === 'ro',
     })
@@ -214,10 +240,11 @@ export class WorkspacePolicy {
       if (seenHost.has(roHost)) continue
       seenHost.add(roHost)
       const containerPath = this.pathMode === 'mirror'
-        ? toPosixPath(roHost)
+        ? toContainerPosixPath(roHost, this.wslMountPrefix)
         : posix.join('/mnt/ro', String(roIndex++))
       mounts.push({
         hostPath: roHost,
+        dockerHostPath: this.formatDockerHostPath(roHost),
         containerPath,
         readOnly: true,
       })
@@ -273,12 +300,22 @@ export class WorkspacePolicy {
     }
   }
 
+  private formatDockerHostPath(canonicalHostPath: string): string {
+    if (this.hostPathStyle === 'wsl') {
+      return windowsPathToWslPath(canonicalHostPath, this.wslMountPrefix)
+    }
+    if (this.hostPathStyle === 'posix') {
+      return toPosixPath(canonicalHostPath)
+    }
+    return canonicalHostPath
+  }
+
   private collectReadOnlyPaths(workspaceRoot?: string): string[] {
     const result: string[] = [...this.staticReadOnlyMounts]
     if (workspaceRoot && this.resolveReadOnlyMountsFn) {
       for (const raw of this.resolveReadOnlyMountsFn(workspaceRoot)) {
         const canonical = canonicalizeHostPath(raw)
-        if (isSensitiveHostPath(canonical, this.dockerSocketPath)) {
+        if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
           throw new WorkspacePolicyError(`refusing sensitive host path from resolveReadOnlyMounts: ${JSON.stringify(raw)}`)
         }
         result.push(canonical)

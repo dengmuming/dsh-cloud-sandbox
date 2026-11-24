@@ -1,0 +1,95 @@
+{
+  "name": "dsh-cloud-sandbox",
+  "version": "0.1.0",
+  "description": "Cloud Linux Docker execution-sandbox runtime plugin for DeepSeek Harness (DSH) with workspace-scoped isolation, safe Skill execution, and multi-tenant fair concurrency queuing.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./pool": {
+      "types": "./dist/docker/runtime-pool.d.ts",
+      "default": "./dist/docker/runtime-pool.js"
+    },
+    "./subprocess": {
+      "types": "./dist/subprocess/docker-subprocess.d.ts",
+      "default": "./dist/subprocess/docker-subprocess.js"
+    },
+    "./shell": {
+      "types": "./dist/shell/docker-shell.d.ts",
+      "default": "./dist/shell/docker-shell.js"
+    },
+    "./fs": {
+      "types": "./dist/fs/workspace-fenced-fs.d.ts",
+      "default": "./dist/fs/workspace-fenced-fs.js"
+    }
+  },
+  "files": [
+    "dist",
+    "Dockerfile",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "docker",
+    "cloud",
+    "sandbox",
+    "cordis",
+    "ai-agent",
+    "linux"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/dsh-bash-local": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-fs": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-fs-local": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-sandbox": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-sandbox-policy": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-shell": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/dsh-subprocess": ">=0.2.1-rc.2 <1.0.0",
+    "@deepseek-ai/schemastery": "^3.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-bash-local": { "optional": true },
+    "@deepseek-ai/dsh-fs": { "optional": true },
+    "@deepseek-ai/dsh-fs-local": { "optional": true },
+    "@deepseek-ai/dsh-sandbox": { "optional": true },
+    "@deepseek-ai/dsh-sandbox-policy": { "optional": true },
+    "@deepseek-ai/dsh-shell": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-bash-local": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-fs": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-fs-local": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-sandbox": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-shell": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.5",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

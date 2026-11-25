@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Relaxed `peerDependencies` floor for `@deepseek-ai/cordis` (`^4.0.5`) and `@deepseek-ai/schemastery` (`^3.18.5`) to support pinned Harness installations alongside `4.1.x` / `3.19.x`.
+
 ### Added
 - **DSH Plugin Manager Bundle Declaration (`cordis.patch.yml`, `icon.svg`, `locale/*.json`)**:
   - Declared `dsh.bundle.patch` (`./cordis.patch.yml`), `engines.dsh` (`>=0.2.1-rc.2 <1.0.0`), icon, and English/Chinese plugin metadata so `dsh-cloud-sandbox` can be installed directly via DSH's Plugin Manager UI or `dsh plugin add`.

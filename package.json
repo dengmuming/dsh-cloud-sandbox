@@ -76,7 +76,7 @@
     "check": "pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-bash-local": ">=0.2.1-rc.2 <1.0.0",
     "@deepseek-ai/dsh-fs": ">=0.2.1-rc.2 <1.0.0",
     "@deepseek-ai/dsh-fs-local": ">=0.2.1-rc.2 <1.0.0",
@@ -84,7 +84,7 @@
     "@deepseek-ai/dsh-sandbox-policy": ">=0.2.1-rc.2 <1.0.0",
     "@deepseek-ai/dsh-shell": ">=0.2.1-rc.2 <1.0.0",
     "@deepseek-ai/dsh-subprocess": ">=0.2.1-rc.2 <1.0.0",
-    "@deepseek-ai/schemastery": "^3.19.0"
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-bash-local": { "optional": true },

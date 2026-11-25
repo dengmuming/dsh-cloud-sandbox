@@ -14,10 +14,13 @@ describe('DSH plugin bundle manifest', () => {
       dsh?: { bundle?: { patch?: string } }
       exports?: Record<string, unknown>
       files?: string[]
+      peerDependencies?: Record<string, string>
     }
 
     expect(pkg.name).toBe('dsh-cloud-sandbox')
     expect(pkg.engines?.dsh).toBe('>=0.2.1-rc.2 <1.0.0')
+    expect(pkg.peerDependencies?.['@deepseek-ai/cordis']).toBe('^4.0.5')
+    expect(pkg.peerDependencies?.['@deepseek-ai/schemastery']).toBe('^3.18.5')
     expect(pkg.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(pkg.exports?.['./intake']).toBeDefined()
     expect(pkg.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')

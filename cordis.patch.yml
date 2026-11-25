@@ -1,0 +1,53 @@
+# Cloud Linux / Windows WSL2 Docker execution sandbox bundle for DeepSeek Harness.
+# Replaces host-local subprocess and shell executors with hardened container isolation
+# and host-wide fair concurrency queuing (purely workspace-scoped, zero user identity).
+
+- id: subprocess
+  disabled: true
+
+- id: bash-sandbox
+  disabled: true
+
+- id: pwsh-sandbox
+  disabled: true
+
+- insert:
+    - id: cloud-sandbox-subprocess
+      name: 'dsh-cloud-sandbox/subprocess'
+      config:
+        image: !!js "process.env.DSH_SANDBOX_IMAGE || 'dsh-cloud-sandbox-runtime:latest'"
+        transport: !!js "process.env.DSH_SANDBOX_TRANSPORT || 'auto'"
+        lifecycle: !!js "process.env.DSH_SANDBOX_LIFECYCLE || 'warm'"
+        workspace:
+          allowedBaseDirs: !!js "process.env.DSH_SANDBOX_ALLOWED_DIRS ? process.env.DSH_SANDBOX_ALLOWED_DIRS.split(',').map(s => s.trim()).filter(Boolean) : (/^[a-zA-Z]:[/\\\\]windows([/\\\\]|$)/i.test(process.cwd()) || /^[a-zA-Z]:[/\\\\]?$/.test(process.cwd()) || process.cwd() === '/' ? [dshHomePath('workspaces')] : [process.cwd()])"
+          readOnlyMounts: !!js "process.env.DSH_SANDBOX_RO_MOUNTS ? process.env.DSH_SANDBOX_RO_MOUNTS.split(',').map(s => s.trim()).filter(Boolean) : []"
+          pathMode: mirror
+          trustRegisteredWorkspaces: !!js "process.env.DSH_SANDBOX_CLOUD_MODE !== '1'"
+          mountAttachments: false
+          mountUserSkills: !!js "process.env.DSH_SANDBOX_CLOUD_MODE !== '1'"
+        scheduler:
+          maxActiveContainers: 16
+          maxConcurrentTasks: 8
+          maxConcurrencyPerWorkspace: 2
+          maxQueueSize: 64
+          queueTimeoutMs: 60000
+          idleTtlMs: 600000
+        security:
+          networkMode: none
+          cpus: 2
+          pidsLimit: 256
+
+    - id: cloud-sandbox-shell
+      name: 'dsh-cloud-sandbox/shell'
+      config:
+        timeoutMs: 60000
+        allowDangerFullAccess: false
+        allowApprovedHostReadOnly: !!js "process.env.DSH_SANDBOX_CLOUD_MODE !== '1'"
+        defaultSandboxMode: workspace-write
+
+    - id: cloud-sandbox-intake
+      name: 'dsh-cloud-sandbox/intake'
+      config:
+        uploadsDir: '.dsh-uploads'
+        stageSessionAttachments: true
+        enableHostFileImport: !!js "process.env.DSH_SANDBOX_CLOUD_MODE !== '1' && process.env.DSH_SANDBOX_HOST_IMPORT !== '0'"

@@ -2,10 +2,17 @@
   "name": "dsh-cloud-sandbox",
   "version": "0.1.0",
   "description": "Cloud Linux Docker execution-sandbox runtime plugin for DeepSeek Harness (DSH) with workspace-scoped isolation, safe Skill execution, and multi-tenant fair concurrency queuing.",
+  "icon": "./icon.svg",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.19.0",
+    "dsh": ">=0.2.1-rc.2 <1.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,10 +36,20 @@
     "./fs": {
       "types": "./dist/fs/workspace-fenced-fs.d.ts",
       "default": "./dist/fs/workspace-fenced-fs.js"
-    }
+    },
+    "./intake": {
+      "types": "./dist/intake/sandbox-file-intake.d.ts",
+      "default": "./dist/intake/sandbox-file-intake.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
     "Dockerfile",
     "README.md",
     "README.zh.md",

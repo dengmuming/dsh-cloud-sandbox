@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -12,6 +12,9 @@ import {
   WorkspaceFencedFileSystem,
   WorkspacePolicyError,
   createDockerRuntimePool,
+  dockerShellPlugin,
+  dockerSubprocessPlugin,
+  isHostRipgrepBinary,
   type DockerClient,
   type DockerContainerCreateRequest,
   type DockerContainerInspect,
@@ -438,5 +441,320 @@ describe('DSH Seam Integration (DockerSubprocessRuntime, DockerShellExecutor, Wo
     expect(outcome).toEqual({ exitCode: 0, signal: null })
     expect(inspectCalls).toBeGreaterThanOrEqual(2)
     await pool.dispose()
+  })
+
+  it('hands off subprocess and shell cleanly during live Cordis reload when departing providers have slow dependents', async () => {
+    const docker = new FakeDockerClient()
+    const ctx = new Context()
+
+    class MockLocalSubprocess extends Service {
+      constructor(c: Context) {
+        super(c, 'subprocess')
+      }
+    }
+
+    class MockLocalShell extends Service {
+      static inject = ['subprocess']
+      constructor(c: Context) {
+        super(c, 'shell')
+      }
+    }
+
+    // Dependent plugin whose async teardown takes 50ms, holding Cordis 4.x's
+    // `while ([...this.provisions].some(impl => impl.dependents.size))` barrier open
+    // on both MockLocalShell and MockLocalSubprocess after dispose() is triggered.
+    const slowDependent = {
+      name: 'SlowSubprocessAndShellConsumer',
+      inject: ['subprocess', 'shell'],
+      apply(c: Context) {
+        c.effect(() => async () => {
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }, 'slow consumer teardown')
+      },
+    }
+
+    const oldSubprocessFiber = await ctx.plugin(MockLocalSubprocess)
+    const oldShellFiber = await ctx.plugin(MockLocalShell)
+    await ctx.plugin(slowDependent)
+
+    // Simulate `@deepseek-ai/cordis-plugin-loader`'s `EntryGroup.update()`:
+    // fire-and-forget dispose of the disabled legacy providers while immediately starting
+    // the replacement `dsh-cloud-sandbox/subprocess` and `dsh-cloud-sandbox/shell` entries.
+    void oldSubprocessFiber.dispose()
+    void oldShellFiber.dispose()
+
+    const newSubprocessFiber = ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: { allowedBaseDirs: [workspacesDir] },
+      dockerClient: docker,
+    })
+    const newShellFiber = ctx.plugin(dockerShellPlugin, {
+      cwd: ws1,
+      timeoutMs: 10_000,
+    })
+
+    await newSubprocessFiber
+    await newShellFiber.await()
+
+    expect(ctx.get('subprocess')).toBeInstanceOf(DockerSubprocessRuntime)
+    expect(ctx.get('shell')).toBeInstanceOf(DockerShellExecutor)
+
+    await ctx.fiber.dispose()
+  })
+
+  it('still fails closed when an active (non-disposing) subprocess provider is already registered', async () => {
+    const docker = new FakeDockerClient()
+    const ctx = new Context()
+
+    class ActiveSubprocess extends Service {
+      constructor(c: Context) {
+        super(c, 'subprocess')
+      }
+    }
+
+    await ctx.plugin(ActiveSubprocess)
+
+    await expect(ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: { allowedBaseDirs: [workspacesDir] },
+      dockerClient: docker,
+    })).rejects.toThrow(/service "subprocess" has been registered/)
+
+    await ctx.fiber.dispose()
+  })
+
+  it('aborts handoff cleanly if the replacement fiber is disposed while waiting for a departing provider', async () => {
+    const docker = new FakeDockerClient()
+    const ctx = new Context()
+
+    let releaseSlowDependent!: () => void
+    const slowDependentGate = new Promise<void>((resolve) => {
+      releaseSlowDependent = resolve
+    })
+
+    class SlowOldSubprocess extends Service {
+      constructor(c: Context) {
+        super(c, 'subprocess')
+      }
+    }
+
+    const slowDependent = {
+      name: 'BlockedConsumer',
+      inject: ['subprocess'],
+      apply(c: Context) {
+        c.effect(() => async () => {
+          await slowDependentGate
+        }, 'blocked consumer teardown')
+      },
+    }
+
+    const oldFiber = await ctx.plugin(SlowOldSubprocess)
+    await ctx.plugin(slowDependent)
+
+    void oldFiber.dispose()
+
+    const replacementFiber = ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: { allowedBaseDirs: [workspacesDir] },
+      dockerClient: docker,
+    })
+
+    // Yield briefly so replacementFiber enters waitForDisposingService, then cancel it.
+    await new Promise(resolve => setTimeout(resolve, 15))
+    await replacementFiber.dispose()
+
+    // Release the old provider; the cancelled replacement must NOT have registered itself.
+    releaseSlowDependent()
+    await oldFiber.await()
+
+    expect(ctx.get('subprocess')).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('rewrites host ripgrep binary and target paths so DSH glob/grep work inside Linux Docker', async () => {
+    expect(isHostRipgrepBinary('C:\\Users\\admin\\node_modules\\@vscode\\ripgrep\\bin\\rg.exe')).toBe(true)
+    expect(isHostRipgrepBinary('D:\\dsh\\dsh-rg.exe')).toBe(true)
+    expect(isHostRipgrepBinary('/opt/dsh/node_modules/@vscode/ripgrep/bin/rg')).toBe(true)
+    expect(isHostRipgrepBinary('bash')).toBe(false)
+    expect(isHostRipgrepBinary('/usr/bin/python3')).toBe(false)
+
+    const docker = new FakeDockerClient()
+    let seenCmd: readonly string[] = []
+    docker.onExecStart = async (record, _container, streams) => {
+      seenCmd = record.request.cmd
+      streams.stdout.end('hello.txt\n')
+      return 0
+    }
+
+    const ctx = new Context()
+    await ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: { allowedBaseDirs: [workspacesDir], pathMode: 'remap' },
+      dockerClient: docker,
+    })
+
+    expect(await ctx.subprocess.resolveExecutable('C:\\dsh\\@vscode\\ripgrep\\bin\\rg.exe')).toBe('/usr/bin/rg')
+
+    const handle = ctx.subprocess.spawn({
+      argv: [
+        'C:\\dsh\\node_modules\\@vscode\\ripgrep\\bin\\rg.exe',
+        '--no-config',
+        '--files',
+        '--',
+        'src\\nested',
+      ],
+      cwd: ws1,
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } },
+      graceMs: 500,
+    })
+    expect((await handle.done).exitCode).toBe(0)
+    expect(seenCmd).toEqual(['rg', '--no-config', '--files', '--', 'src/nested'])
+
+    // Absolute host path after `--` maps into container workspace path.
+    const handle2 = ctx.subprocess.spawn({
+      argv: ['/host/node_modules/@vscode/ripgrep/bin/rg', '--no-config', '--json', '--regexp=hello', '--', ws1],
+      cwd: ws1,
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } },
+      graceMs: 500,
+    })
+    expect((await handle2.done).exitCode).toBe(0)
+    expect(seenCmd).toEqual(['rg', '--no-config', '--json', '--regexp=hello', '--', '/workspace'])
+
+    await ctx.fiber.dispose()
+  })
+
+  it('trusts DSH workspaceRegistry folders and auto-mounts DSH attachments read-only when enabled', async () => {
+    const docker = new FakeDockerClient()
+    const fakeDshHome = join(rootDir, 'dsh-home')
+    const attachmentsDir = join(fakeDshHome, 'attachments', 'v1', 'files')
+    mkdirSync(attachmentsDir, { recursive: true })
+    writeFileSync(join(attachmentsDir, 'receipt.pdf'), 'pdf-bytes')
+
+    const extraProject = join(rootDir, 'registered-project')
+    mkdirSync(extraProject, { recursive: true })
+
+    const ctx = new Context()
+    ;(ctx as unknown as { dshHomePath: (sub: string) => string }).dshHomePath = (sub: string) => join(fakeDshHome, sub)
+
+    class MockWorkspaceRegistry extends Service {
+      constructor(c: Context) {
+        super(c, 'workspaceRegistry')
+      }
+      list() {
+        return [{ path: extraProject }]
+      }
+    }
+    await ctx.plugin(MockWorkspaceRegistry)
+
+    await ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: {
+        allowedBaseDirs: [ws1],
+        trustRegisteredWorkspaces: true,
+        mountAttachments: true,
+      },
+      dockerClient: docker,
+    })
+
+    // Registered project outside static allowedBaseDirs is allowed automatically!
+    const handle = ctx.subprocess.spawn({
+      argv: ['echo', 'ok'],
+      cwd: extraProject,
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
+      graceMs: 500,
+    })
+    expect((await handle.done).exitCode).toBe(0)
+
+    const container = [...docker.containers.values()][0]
+    expect(container).toBeDefined()
+    const attachmentMount = container!.request.mounts.find(m => m.hostPath.includes('attachments'))
+    expect(attachmentMount).toBeDefined()
+    expect(attachmentMount?.readOnly).toBe(true)
+
+    // Unregistered host directory (secretDir) is STILL rejected fail-closed!
+    expect(() => ctx.subprocess.spawn({
+      argv: ['echo', 'nope'],
+      cwd: secretDir,
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
+      graceMs: 500,
+    })).toThrow(WorkspacePolicyError)
+
+    await ctx.fiber.dispose()
+  })
+
+  it('supports user-approved one-shot ephemeral read-only host file mounts while blocking credential paths', async () => {
+    const docker = new FakeDockerClient()
+    const downloadsDir = join(rootDir, 'downloads')
+    mkdirSync(downloadsDir, { recursive: true })
+    const receiptFile = join(downloadsDir, 'Receipt-2917-2642.pdf')
+    writeFileSync(receiptFile, 'receipt-data')
+
+    const sshDir = join(rootDir, '.ssh')
+    mkdirSync(sshDir, { recursive: true })
+    const sshKey = join(sshDir, 'id_rsa')
+    writeFileSync(sshKey, 'PRIVATE KEY')
+
+    let seenCommand = ''
+    let seenMounts: DockerContainerCreateRequest['mounts'] = []
+    docker.onExecStart = async (record, container, streams) => {
+      seenCommand = record.request.cmd[2] ?? ''
+      seenMounts = container.request.mounts
+      if (container.request.mounts.some(m => m.hostPath === receiptFile || m.hostPath.endsWith('Receipt-2917-2642.pdf'))) {
+        streams.stdout.end('parsed receipt\n')
+        return 0
+      }
+      streams.stderr.end(`cat: ${receiptFile}: No such file or directory\n`)
+      return 1
+    }
+
+    const ctx = new Context()
+    await ctx.plugin(dockerSubprocessPlugin, {
+      image: 'dsh-cloud-sandbox-runtime:latest',
+      workspace: { allowedBaseDirs: [workspacesDir] },
+      dockerClient: docker,
+    })
+    await ctx.plugin(dockerShellPlugin, {
+      cwd: ws1,
+      timeoutMs: 10_000,
+      allowDangerFullAccess: false,
+      allowApprovedHostReadOnly: true,
+    })
+
+    // 1) Normal workspace-write mode: unmounted host file fails and marks sandbox.denied = true
+    //    so DSH prompts the user for approval (or asks them to upload the file).
+    const unapproved = await ctx.shell.execute(ctx.shell.resolve({
+      command: `cat "${receiptFile}"`,
+      workdir: ws1,
+      sandboxPolicy: { mode: 'workspace-write', workspaceRoot: ws1 },
+    }))
+    const unapprovedResult = await unapproved.result()
+    expect(unapprovedResult.exitCode).toBe(1)
+    expect(unapprovedResult.sandbox?.denied).toBe(true)
+
+    // 2) After user approves via DSH approval dialog (mode === 'danger-full-access'):
+    //    mounts ONLY the approved receipt file strictly read-only into an ephemeral container!
+    const approved = await ctx.shell.execute(ctx.shell.resolve({
+      command: `cat "${receiptFile}"`,
+      workdir: ws1,
+      sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: ws1 },
+    }))
+    const approvedResult = await approved.result()
+    expect(approvedResult.exitCode).toBe(0)
+    expect(approvedResult.stdout.text).toContain('parsed receipt')
+    const receiptMount = seenMounts.find(m => m.hostPath.endsWith('Receipt-2917-2642.pdf'))
+    expect(receiptMount).toBeDefined()
+    expect(receiptMount?.readOnly).toBe(true)
+    expect(seenCommand).toContain(receiptMount!.containerPath)
+    // Ephemeral container was auto-removed after the approved command exited.
+    expect(docker.removedIds.length).toBeGreaterThanOrEqual(1)
+
+    // 3) Even WITH approval, host credential paths (.ssh/id_rsa) are ALWAYS rejected fail-closed!
+    await expect(ctx.shell.execute(ctx.shell.resolve({
+      command: `cat "${sshKey}"`,
+      workdir: ws1,
+      sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: ws1 },
+    }))).rejects.toThrow(WorkspacePolicyError)
+
+    await ctx.fiber.dispose()
   })
 })

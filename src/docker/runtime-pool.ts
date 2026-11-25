@@ -247,15 +247,31 @@ export class DockerRuntimePool {
   }
 
   /** Resolve a host path/cwd using the workspace policy. */
-  resolveWorkspace(cwd: string, accessMode: WorkspaceAccessMode = 'rw'): ResolvedWorkspace {
-    return this.policy.resolveForExecution(cwd, accessMode)
+  resolveWorkspace(
+    cwd: string,
+    accessMode: WorkspaceAccessMode = 'rw',
+    extraReadOnlyMounts?: readonly string[],
+  ): ResolvedWorkspace {
+    return this.policy.resolveForExecution(cwd, accessMode, extraReadOnlyMounts)
+  }
+
+  /** Validate a user-approved host path for a one-off ephemeral read-only mount. */
+  validateApprovedReadOnlyPath(rawPath: string): string {
+    return this.policy.validateApprovedReadOnlyPath(rawPath)
   }
 
   /**
    * Spawn one managed process inside the Docker container corresponding to `spec.cwd`.
    * Returns a live `SubprocessHandle` synchronously, honoring DSH's `ctx.subprocess` contract.
    */
-  spawn(spec: SubprocessSpawnSpec, options: { accessMode?: WorkspaceAccessMode } = {}): SubprocessHandle {
+  spawn(
+    spec: SubprocessSpawnSpec,
+    options: {
+      accessMode?: WorkspaceAccessMode
+      ephemeral?: boolean
+      extraReadOnlyMounts?: readonly string[]
+    } = {},
+  ): SubprocessHandle {
     this.assertNotDisposed()
     spec.signal?.throwIfAborted()
     if (!Array.isArray(spec.argv) || spec.argv.length === 0 || !spec.argv[0]) {
@@ -266,7 +282,12 @@ export class DockerRuntimePool {
     }
 
     const accessMode: WorkspaceAccessMode = options.accessMode ?? 'rw'
-    const resolved = this.policy.resolveForExecution(spec.cwd, accessMode)
+    const hasExtraRoMounts = Array.isArray(options.extraReadOnlyMounts) && options.extraReadOnlyMounts.length > 0
+    const useEphemeral = this.lifecycle === 'ephemeral'
+      || accessMode === 'ro'
+      || options.ephemeral === true
+      || hasExtraRoMounts
+    const resolved = this.policy.resolveForExecution(spec.cwd, accessMode, options.extraReadOnlyMounts)
 
     const stdinPass = spec.stdio.stdin === 'pipe' ? new PassThrough() : undefined
     const stdoutPipe = spec.stdio.stdout === 'pipe' ? new PassThrough() : undefined
@@ -321,7 +342,7 @@ export class DockerRuntimePool {
       try {
         internalAbort.signal.throwIfAborted()
 
-        if (this.lifecycle === 'ephemeral' || accessMode === 'ro') {
+        if (useEphemeral) {
           ephemeralSlot = await this.scheduler.acquireEphemeralContainerSlot(resolved.workspaceId, internalAbort.signal)
           const cid = await this.createAndStartContainer(resolved, accessMode, 'ephemeral', internalAbort.signal)
           ephemeralContainerId = cid
@@ -702,10 +723,37 @@ export class DockerRuntimePool {
   }
 
   private mapArgvPaths(argv: readonly string[], resolved: ResolvedWorkspace): string[] {
-    if (resolved.pathMode === 'mirror' && resolved.hostWorkspaceRoot === resolved.containerWorkspaceRoot) {
+    if (argv.length === 0) return []
+    const isRipgrep = isHostRipgrepBinary(argv[0] ?? '')
+    const needsPathMapping = resolved.pathMode !== 'mirror'
+      || resolved.hostWorkspaceRoot !== resolved.containerWorkspaceRoot
+
+    if (!isRipgrep && !needsPathMapping) {
       return [...argv]
     }
-    return argv.map((arg) => resolved.toContainerPath(arg) ?? arg)
+
+    let seenDoubleDash = false
+    return argv.map((arg, index) => {
+      if (index === 0 && isRipgrep) {
+        return 'rg'
+      }
+      if (isRipgrep) {
+        if (!seenDoubleDash) {
+          if (arg === '--') {
+            seenDoubleDash = true
+          }
+          return arg
+        }
+        const mapped = resolved.toContainerPath(arg)
+        if (mapped) return mapped
+        // Relative Windows paths passed after `--` (e.g. `src\index.ts`) need POSIX separators inside Linux `rg`.
+        if (arg.includes('\\') && !arg.startsWith('-')) {
+          return arg.replaceAll('\\', '/')
+        }
+        return arg
+      }
+      return resolved.toContainerPath(arg) ?? arg
+    })
   }
 
   private async terminateExecRange(params: {
@@ -804,6 +852,19 @@ function delay(ms: number): Promise<void> {
     const t = setTimeout(resolve, ms)
     t.unref()
   })
+}
+
+const HOST_RIPGREP_PATTERN = /(?:^|[\\/])(?:[^\\/]*-)?rg(?:\.exe)?$/i
+
+/**
+ * Return true when an executable path refers to a host-side ripgrep binary
+ * (such as `@vscode/ripgrep`'s `rg`/`rg.exe` or a packaged `*-rg(.exe)` sidecar)
+ * that should be executed using the Linux container's preinstalled `rg`.
+ */
+export function isHostRipgrepBinary(executable: string): boolean {
+  if (!executable) return false
+  const hasPathOrWinExt = executable.includes('/') || executable.includes('\\') || /\.exe$/i.test(executable)
+  return hasPathOrWinExt && HOST_RIPGREP_PATTERN.test(executable)
 }
 
 /** Factory helper for creating a host-shared `DockerRuntimePool` (for multi-context cloud hosts). */

@@ -58,12 +58,16 @@ src/
     wsl-bridge.ts               Dependency-free Windows -> WSL2 Unix-socket Duplex bridge via wsl.exe
     stream-collector.ts         DSH SubprocessOutputReader (bounded tail ring + optional spill file)
     runtime-pool.ts             DockerRuntimePool orchestrating containers, exec, PTY, TTL, orphan sweep
+  cordis/
+    service-handoff.ts          Cordis live hot-reload service handoff helper
   subprocess/
     docker-subprocess.ts        ctx.subprocess provider (extends @deepseek-ai/dsh-subprocess)
   shell/
     docker-shell.ts             Optional ctx.shell executor enforcing sandboxPolicy without escalation
   fs/
     workspace-fenced-fs.ts      Optional ctx.fs strict read+write workspace fence for vanilla DSH
+  intake/
+    sandbox-file-intake.ts      Per-session attachment staging + approval-gated host file import tool
   index.ts                      Cordis plugin exports & shared pool factory
 tests/                          Unit and contract tests (runs on any OS via mock DockerClient)
 Dockerfile                      Default hardened Debian Linux sandbox runtime image

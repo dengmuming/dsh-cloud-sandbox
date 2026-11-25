@@ -38,10 +38,17 @@ export interface BindMountSpec {
 
 export interface WorkspacePolicyConfig {
   /**
-   * Required allowlist of absolute host base directories under which workspaces may reside.
-   * Any workspace path resolving outside these directories is rejected (fail-closed).
+   * Allowlist of absolute host base directories under which workspaces may reside.
+   * Any workspace path resolving outside these directories (and optional `resolveAllowedBaseDirs`)
+   * is rejected (fail-closed).
    */
   readonly allowedBaseDirs: readonly string[]
+  /**
+   * Optional dynamic supplier of additional allowed workspace base directories
+   * (for example, workspace folders explicitly registered by the user in DSH's `workspaceRegistry`).
+   * Every returned path is still canonicalized and checked against sensitive-path denylists.
+   */
+  readonly resolveAllowedBaseDirs?: () => readonly string[]
   /**
    * Optional static list of absolute host directories (e.g., shared Skill bundles)
    * mounted strictly read-only (`:ro`) into every sandbox container.
@@ -49,9 +56,30 @@ export interface WorkspacePolicyConfig {
   readonly readOnlyMounts?: readonly string[]
   /**
    * Optional callback returning additional read-only host paths (e.g., workspace-adjacent
-   * Skill directories) for a given canonical workspace root. Always mounted `:ro`.
+   * Skill directories or uploaded chat attachments) for a given canonical workspace root.
+   * Always mounted `:ro`.
    */
   readonly resolveReadOnlyMounts?: (workspaceRoot: string) => readonly string[]
+  /**
+   * When used as a DSH plugin (`DockerSubprocessRuntime`), automatically include workspaces
+   * explicitly registered in DSH's `ctx.workspaceRegistry` as allowed base directories.
+   * Default: `false` (multi-tenant cloud hosts keep an explicit static `allowedBaseDirs` allowlist).
+   */
+  readonly trustRegisteredWorkspaces?: boolean
+  /**
+   * When used as a DSH plugin (`DockerSubprocessRuntime`), mount DSH's uploaded file attachment
+   * directory (`$DSH_HOME/attachments`) strictly read-only (`:ro`) when it exists on disk so
+   * files uploaded into chat are usable inside the sandbox container.
+   * Default: `false` in programmatic API; enabled in interactive `cordis.patch.yml`.
+   */
+  readonly mountAttachments?: boolean
+  /**
+   * When used as a DSH plugin (`DockerSubprocessRuntime`), mount existing user Skill directories
+   * (`~/.agents/skills`, `~/.dsh/skills`) strictly read-only (`:ro`) so Skill scripts run inside
+   * the sandbox container without allowing writes to Skill files.
+   * Default: `false` in programmatic API; enabled in interactive `cordis.patch.yml`.
+   */
+  readonly mountUserSkills?: boolean
   /**
    * Optional callback mapping a subprocess `cwd` to its enclosing canonical workspace root.
    * Useful when a session runs commands in a subdirectory of a workspace so all subdirs share one container.
@@ -201,6 +229,9 @@ export type DockerSandboxErrorCode =
   | 'DOCKER_UNAVAILABLE'
   | 'POOL_DISPOSED'
   | 'SANDBOX_ESCALATION_DENIED'
+  | 'HOST_IMPORT_DISABLED'
+  | 'HOST_IMPORT_APPROVAL_UNAVAILABLE'
+  | 'HOST_IMPORT_DENIED'
 
 export class DockerSandboxError extends Error {
   readonly code: DockerSandboxErrorCode

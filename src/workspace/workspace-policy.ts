@@ -41,6 +41,19 @@ const SENSITIVE_LINUX_PREFIXES = [
   '/root',
 ] as const
 
+const SENSITIVE_CREDENTIAL_SEGMENTS = new Set([
+  '.ssh',
+  '.aws',
+  '.gnupg',
+  '.gpg',
+  '.kube',
+  '.docker',
+  '.git-credentials',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+])
+
 export interface ResolvedWorkspace {
   /** Deterministic, user-agnostic identifier derived from canonical workspaceRoot. */
   readonly workspaceId: string
@@ -133,8 +146,19 @@ function isSensitiveHostPath(canonicalPath: string, dockerSocketPath: string, ws
   return false
 }
 
+export function isSensitiveCredentialPath(canonicalPath: string): boolean {
+  const segments = toPosixPath(canonicalPath).split('/').filter(Boolean)
+  for (const segment of segments) {
+    if (SENSITIVE_CREDENTIAL_SEGMENTS.has(segment.toLowerCase())) {
+      return true
+    }
+  }
+  return false
+}
+
 export class WorkspacePolicy {
   private readonly allowedBases: readonly string[]
+  private readonly resolveAllowedBaseDirsFn?: () => readonly string[]
   private readonly staticReadOnlyMounts: readonly string[]
   private readonly resolveReadOnlyMountsFn?: (workspaceRoot: string) => readonly string[]
   private readonly resolveWorkspaceRootFn?: (canonicalCwd: string) => string
@@ -145,7 +169,9 @@ export class WorkspacePolicy {
   private readonly hostPathStyle: Exclude<HostMountPathStyle, 'auto'>
 
   constructor(config: WorkspacePolicyConfig) {
-    if (!Array.isArray(config.allowedBaseDirs) || config.allowedBaseDirs.length === 0) {
+    const hasStaticBases = Array.isArray(config.allowedBaseDirs) && config.allowedBaseDirs.length > 0
+    const hasDynamicBases = typeof config.resolveAllowedBaseDirs === 'function'
+    if (!hasStaticBases && !hasDynamicBases) {
       throw new WorkspacePolicyError('workspace.allowedBaseDirs must contain at least one absolute directory')
     }
     this.dockerSocketPath = config.dockerSocketPath ?? '/var/run/docker.sock'
@@ -160,7 +186,7 @@ export class WorkspacePolicy {
     }
 
     const bases: string[] = []
-    for (const dir of config.allowedBaseDirs) {
+    for (const dir of config.allowedBaseDirs ?? []) {
       const canonical = canonicalizeHostPath(dir)
       if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
         throw new WorkspacePolicyError(`refusing sensitive host directory in allowedBaseDirs: ${JSON.stringify(dir)}`)
@@ -168,6 +194,7 @@ export class WorkspacePolicy {
       bases.push(canonical)
     }
     this.allowedBases = bases
+    this.resolveAllowedBaseDirsFn = config.resolveAllowedBaseDirs
 
     const roMounts: string[] = []
     for (const mount of config.readOnlyMounts ?? []) {
@@ -182,13 +209,46 @@ export class WorkspacePolicy {
     this.resolveWorkspaceRootFn = config.resolveWorkspaceRoot
   }
 
+  /** Collect static + dynamically resolved allowed base directories, strictly filtering out sensitive paths. */
+  getEffectiveAllowedBaseDirs(): readonly string[] {
+    if (!this.resolveAllowedBaseDirsFn) return this.allowedBases
+    const merged = new Set<string>(this.allowedBases)
+    for (const raw of this.resolveAllowedBaseDirsFn()) {
+      if (typeof raw !== 'string' || raw.trim().length === 0) continue
+      try {
+        const canonical = canonicalizeHostPath(raw)
+        if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) continue
+        merged.add(canonical)
+      } catch {
+        // Ignore unresolvable dynamic entries rather than widening access.
+      }
+    }
+    return [...merged]
+  }
+
+  /**
+   * Validate a user-approved host file or directory for a one-off read-only mount inside an
+   * ephemeral container. Always rejects sensitive system paths and host credential stores.
+   */
+  validateApprovedReadOnlyPath(rawPath: string): string {
+    const canonical = canonicalizeHostPath(rawPath)
+    if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
+      throw new WorkspacePolicyError(`refusing sensitive host path even with approval: ${JSON.stringify(rawPath)}`)
+    }
+    if (isSensitiveCredentialPath(canonical)) {
+      throw new WorkspacePolicyError(`refusing host credential path even with approval: ${JSON.stringify(rawPath)}`)
+    }
+    return canonical
+  }
+
   /** Validate that a raw path is allowed under `allowedBaseDirs` (and optionally read-only mounts for reads). */
   assertPathAllowed(rawPath: string, options: { allowReadOnlyMounts?: boolean; workspaceRoot?: string } = {}): string {
     const canonical = canonicalizeHostPath(rawPath)
     if (isSensitiveHostPath(canonical, this.dockerSocketPath, this.wslMountPrefix)) {
       throw new WorkspacePolicyError(`access to sensitive host path is denied: ${JSON.stringify(rawPath)}`)
     }
-    if (this.allowedBases.some(base => isPathContained(canonical, base))) {
+    const effectiveBases = this.getEffectiveAllowedBaseDirs()
+    if (effectiveBases.some(base => isPathContained(canonical, base))) {
       return canonical
     }
     if (options.allowReadOnlyMounts) {
@@ -200,17 +260,22 @@ export class WorkspacePolicy {
   }
 
   /** Resolve a requested execution `cwd` into a complete, mount-validated `ResolvedWorkspace`. */
-  resolveForExecution(cwd: string, accessMode: WorkspaceAccessMode = 'rw'): ResolvedWorkspace {
+  resolveForExecution(
+    cwd: string,
+    accessMode: WorkspaceAccessMode = 'rw',
+    extraReadOnlyMounts?: readonly string[],
+  ): ResolvedWorkspace {
     const canonicalCwd = this.assertPathAllowed(cwd)
     this.assertExistingDirectoryOrSafe(canonicalCwd)
 
+    const effectiveBases = this.getEffectiveAllowedBaseDirs()
     let hostWorkspaceRoot = canonicalCwd
     if (this.resolveWorkspaceRootFn) {
       const candidateRoot = canonicalizeHostPath(this.resolveWorkspaceRootFn(canonicalCwd))
       if (isSensitiveHostPath(candidateRoot, this.dockerSocketPath, this.wslMountPrefix)) {
         throw new WorkspacePolicyError(`resolved workspace root is a sensitive host path: ${JSON.stringify(candidateRoot)}`)
       }
-      if (!this.allowedBases.some(base => isPathContained(candidateRoot, base))) {
+      if (!effectiveBases.some(base => isPathContained(candidateRoot, base))) {
         throw new WorkspacePolicyError(`resolved workspace root escapes allowedBaseDirs: ${JSON.stringify(candidateRoot)}`)
       }
       if (!isPathContained(canonicalCwd, candidateRoot)) {
@@ -221,6 +286,11 @@ export class WorkspacePolicy {
 
     const workspaceId = computeWorkspaceId(hostWorkspaceRoot)
     const roPaths = this.collectReadOnlyPaths(hostWorkspaceRoot)
+    if (extraReadOnlyMounts) {
+      for (const extra of extraReadOnlyMounts) {
+        roPaths.push(this.validateApprovedReadOnlyPath(extra))
+      }
+    }
 
     const mounts: BindMountSpec[] = []
     const containerWorkspaceRoot = this.pathMode === 'mirror'

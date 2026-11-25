@@ -64,6 +64,14 @@ flowchart TB
 docker build -t dsh-cloud-sandbox-runtime:latest .
 ```
 
+### 1.5. Install Directly as a DSH Plugin Bundle
+
+`dsh-cloud-sandbox` declares `dsh.bundle.patch` (`./cordis.patch.yml`), icon, and localized metadata, so it can be installed directly via DSH's Plugin Manager UI or `dsh plugin add <path-or-package>` (after running `pnpm run build` for local checkouts).
+
+- **Local Desktop / Web mode (default)**: Automatically trusts workspaces registered in DSH's `workspaceRegistry`, mounts existing user Skill directories (`~/.agents/skills`, `~/.dsh/skills`) read-only, stages uploaded session attachments into `<workspaceRoot>/.dsh-uploads/`, and exposes the user-approval-gated `sandbox_import_file` tool (protected by `ctx.approval` + sensitive/credential path denylists) for importing specific host files as safe copies.
+- **Multi-Tenant Cloud lockdown (`DSH_SANDBOX_CLOUD_MODE=1`)**: Disables `trustRegisteredWorkspaces`, `mountUserSkills`, `allowApprovedHostReadOnly`, and `sandbox_import_file`, keeping only strict static `allowedBaseDirs` + per-session isolated attachment staging into `<workspaceRoot>/.dsh-uploads/` (never mounting global `$DSH_HOME/attachments` across tenants).
+- **Environment variables**: `DSH_SANDBOX_IMAGE`, `DSH_SANDBOX_TRANSPORT`, `DSH_SANDBOX_LIFECYCLE`, `DSH_SANDBOX_ALLOWED_DIRS` (comma-separated), `DSH_SANDBOX_RO_MOUNTS` (comma-separated), `DSH_SANDBOX_CLOUD_MODE=1`, `DSH_SANDBOX_HOST_IMPORT=0`.
+
 ### 2. Standalone DSH Integration (Single Context)
 
 ```ts

@@ -15,6 +15,7 @@ export {
   canonicalizeHostPath,
   computeWorkspaceId,
   isPathContained,
+  isSensitiveCredentialPath,
   toPosixPath,
   type ResolvedWorkspace,
 } from './workspace/workspace-policy.ts'
@@ -68,21 +69,44 @@ export {
   DockerRuntimePool,
   buildContainerEnv,
   createDockerRuntimePool,
+  isHostRipgrepBinary,
   scrubEnvMap,
   type ManagedContainer,
 } from './docker/runtime-pool.ts'
 export {
   DockerSubprocessRuntime,
+  dockerSubprocessPlugin,
   type DockerSubprocessConfig,
+  type SubprocessExecutionOptions,
 } from './subprocess/docker-subprocess.ts'
 export {
   DockerShellExecutor,
+  dockerShellPlugin,
+  extractExistingHostPathsFromCommand,
+  rewriteMountedHostPathsInCommand,
   type DockerShellConfig,
 } from './shell/docker-shell.ts'
 export {
   WorkspaceFencedFileSystem,
+  workspaceFencedFsPlugin,
   type WorkspaceFencedFsConfig,
 } from './fs/workspace-fenced-fs.ts'
+export {
+  SandboxFileIntake,
+  normalizeUploadsSubdir,
+  sandboxFileIntakePlugin,
+  sanitizeLeafFilename,
+  type ImportedSandboxFile,
+  type SandboxFileIntakeConfig,
+  type SandboxImportResult,
+} from './intake/sandbox-file-intake.ts'
+export {
+  createServiceHandoffPlugin,
+  isFiberActiveForRegistration,
+  waitForDisposingService,
+  type ServiceHandoffPlugin,
+  type ServiceHandoffPluginOptions,
+} from './cordis/service-handoff.ts'
 
-import { DockerSubprocessRuntime } from './subprocess/docker-subprocess.ts'
-export default DockerSubprocessRuntime
+import { dockerSubprocessPlugin } from './subprocess/docker-subprocess.ts'
+export default dockerSubprocessPlugin

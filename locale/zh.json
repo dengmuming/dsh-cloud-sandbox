@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "云端 Docker 执行沙盒",
+    "description": "在加固的 Linux / Windows WSL2 Docker 容器内隔离运行 Agent 命令、终端与 Skill 脚本，支持纯工作目录管理与多人公平并发排队。"
+  }
+}

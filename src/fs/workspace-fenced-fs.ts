@@ -30,6 +30,7 @@ import { LocalFileSystem, type Config as LocalFsConfig } from '@deepseek-ai/dsh-
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { WorkspacePolicyConfig } from '../types.ts'
+import { createServiceHandoffPlugin } from '../cordis/service-handoff.ts'
 import { WorkspacePolicy, canonicalizeHostPath, isPathContained } from '../workspace/workspace-policy.ts'
 
 export interface WorkspaceFencedFsConfig extends LocalFsConfig, Partial<WorkspacePolicyConfig> {
@@ -304,4 +305,11 @@ export class WorkspaceFencedFileSystem extends LocalFileSystem {
   }
 }
 
-export default WorkspaceFencedFileSystem
+export const workspaceFencedFsPlugin = createServiceHandoffPlugin({
+  name: 'WorkspaceFencedFileSystem',
+  serviceName: 'fs',
+  Config: WorkspaceFencedFileSystem.Config,
+  instantiate: (ctx, config: WorkspaceFencedFsConfig) => new WorkspaceFencedFileSystem(ctx, config),
+})
+
+export default workspaceFencedFsPlugin

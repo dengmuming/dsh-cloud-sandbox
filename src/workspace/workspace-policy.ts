@@ -83,6 +83,7 @@ export function toPosixPath(p: string): string {
 /**
  * Resolve a host path to its canonical form by realpath-ing the deepest existing ancestor.
  * This catches symlinks along existing segments even when the leaf directory/file does not yet exist.
+ * Native realpath also resolves Windows DOS drive aliases to the identities used by DSH's filesystem.
  */
 export function canonicalizeHostPath(inputPath: string): string {
   if (typeof inputPath !== 'string' || inputPath.trim().length === 0) {
@@ -105,7 +106,7 @@ export function canonicalizeHostPath(inputPath: string): string {
   let probe = normalized
   while (true) {
     try {
-      const real = realpathSync(probe)
+      const real = realpathSync.native(probe)
       if (missingSegments.length === 0) return real
       return resolve(real, ...missingSegments.reverse())
     } catch (error) {

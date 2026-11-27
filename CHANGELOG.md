@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Reject Windows drive and WSL UNC host paths on non-Windows hosts before POSIX resolution, so Windows paths cannot be interpreted as local relative paths. CI checks both Linux and Windows.
+- Canonicalize Windows DOS drive aliases with native realpath, matching DSH filesystem target identities and keeping workspace access and IDs consistent across aliases.
 
 ## [0.2.0] - 2026-11-27
 

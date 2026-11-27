@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -49,6 +50,25 @@ describe('WorkspacePolicy', () => {
     })
     expect(policy.getEffectiveAllowedBaseDirs()).toEqual([canonicalizeHostPath(workspacesDir)])
     expect(() => policy.validateApprovedReadOnlyPath(paths[2]!)).toThrow(WorkspacePolicyError)
+  })
+
+  it.skipIf(process.platform !== 'win32')('shares native filesystem identities across Windows DOS drive aliases', () => {
+    const drive = ['Z:', 'Y:', 'X:', 'W:'].find(candidate => !existsSync(`${candidate}\\`))
+    expect(drive).toBeDefined()
+    execFileSync('subst.exe', [drive!, rootDir])
+    try {
+      const mappedBase = `${drive}\\workspaces`
+      const policy = new WorkspacePolicy({ allowedBaseDirs: [mappedBase] })
+      const physical = canonicalizeHostPath(wsA)
+      const aliased = canonicalizeHostPath(`${mappedBase}\\project-a`)
+      expect(aliased).toBe(physical)
+      expect(computeWorkspaceId(aliased)).toBe(computeWorkspaceId(physical))
+      expect(policy.assertPathAllowed(wsA)).toBe(physical)
+      expect(policy.assertPathAllowed(`${mappedBase}\\project-a\\new.txt`)).toBe(join(physical, 'new.txt'))
+      expect(() => policy.assertPathAllowed(outsideDir)).toThrow(WorkspacePolicyError)
+    } finally {
+      execFileSync('subst.exe', [drive!, '/D'])
+    }
   })
 
   it('resolves allowed workspaces deterministically and rejects paths outside allowlist', () => {

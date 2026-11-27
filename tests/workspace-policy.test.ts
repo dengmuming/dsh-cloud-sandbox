@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { WorkspacePolicy, WorkspacePolicyError, computeWorkspaceId } from '../src/index.ts'
+import { WorkspacePolicy, WorkspacePolicyError, canonicalizeHostPath, computeWorkspaceId } from '../src/index.ts'
 
 describe('WorkspacePolicy', () => {
   let rootDir: string
@@ -34,6 +34,21 @@ describe('WorkspacePolicy', () => {
     expect(() => new WorkspacePolicy({ allowedBaseDirs: ['/etc'] })).toThrow(WorkspacePolicyError)
     expect(() => new WorkspacePolicy({ allowedBaseDirs: ['/var/run'] })).toThrow(WorkspacePolicyError)
     expect(() => new WorkspacePolicy({ allowedBaseDirs: ['/'] })).toThrow(WorkspacePolicyError)
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects Windows host paths before POSIX resolution', () => {
+    const paths = ['C:\\', 'C:\\Windows', 'D:/work/project', '\\\\wsl.localhost\\Ubuntu\\home\\dev']
+    for (const path of paths) {
+      expect(() => canonicalizeHostPath(path)).toThrow('Windows host paths require a Windows host')
+      expect(() => new WorkspacePolicy({ allowedBaseDirs: [path] })).toThrow(WorkspacePolicyError)
+      expect(() => new WorkspacePolicy({ allowedBaseDirs: [workspacesDir], readOnlyMounts: [path] })).toThrow(WorkspacePolicyError)
+    }
+    const policy = new WorkspacePolicy({
+      allowedBaseDirs: [workspacesDir],
+      resolveAllowedBaseDirs: () => paths,
+    })
+    expect(policy.getEffectiveAllowedBaseDirs()).toEqual([canonicalizeHostPath(workspacesDir)])
+    expect(() => policy.validateApprovedReadOnlyPath(paths[2]!)).toThrow(WorkspacePolicyError)
   })
 
   it('resolves allowed workspaces deterministically and rejects paths outside allowlist', () => {

@@ -94,6 +94,9 @@ export function canonicalizeHostPath(inputPath: string): string {
   if (isDisallowedWindowsUncPath(inputPath)) {
     throw new WorkspacePolicyError(`refusing non-WSL Windows UNC/device path: ${JSON.stringify(inputPath)}`)
   }
+  if (process.platform !== 'win32' && (isWindowsDrivePath(inputPath) || parseWslUncPath(inputPath))) {
+    throw new WorkspacePolicyError(`Windows host paths require a Windows host; use a POSIX path: ${JSON.stringify(inputPath)}`)
+  }
   if (!isAbsolute(inputPath) && !isWindowsDrivePath(inputPath) && !parseWslUncPath(inputPath)) {
     throw new WorkspacePolicyError(`path must be absolute: ${JSON.stringify(inputPath)}`)
   }

@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - GitHub Actions CI for branch pushes and pull requests, plus source-tag releases that run all checks, upload a precompiled `.tgz`, and publish immutable `dist-v*` tags. The `dist` branch tracks the newest stable release.
 
+### Fixed
+- Reject Windows drive and WSL UNC host paths on non-Windows hosts before POSIX resolution, so Windows paths cannot be interpreted as local relative paths. CI checks both Linux and Windows.
+
 ## [0.2.0] - 2026-11-27
 
 ### Added

@@ -68,13 +68,13 @@ flowchart TB
 dsh plugin --profile desktop add dsh-cloud-sandbox
 ```
 
-Web 模式将 `desktop` 换为 `web`。GitHub Release 也提供预编译包，插件管理器可填写以下地址：
+Web 模式将 `desktop` 换为 `web`。锁定版本时，在插件管理器填写 `dsh-cloud-sandbox@0.2.3`，或运行：
 
-```text
-https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
+```bash
+dsh plugin --profile desktop add dsh-cloud-sandbox@0.2.3
 ```
 
-`dist` 指向最新稳定版。锁定版本时，将 `#dist` 换为 `#dist-v<版本号>`；也可安装该版本 Release 附带的 `dsh-cloud-sandbox-<版本号>.tgz` 下载链接。`main` 和 `v*` 源码 tag 不包含 `dist/`，不适合直接安装。沙箱 Docker 镜像仍需单独构建。
+GitHub Release 也提供预编译的 `dsh-cloud-sandbox-<版本号>.tgz`，插件管理器可填写其下载链接。原 `dist` 分支和 `dist-v*` 标签的 Git 安装方式已停止支持，请改用 npm 包或 Release 安装包。`main` 和 `v*` 源码 tag 不包含 `dist/`，不适合直接安装。沙箱 Docker 镜像仍需单独构建。
 
 先启动 Docker：Windows Docker Desktop 使用 Linux 容器模式；Linux / WSL2 启动对应的 Docker Engine。安装插件后，完成下面的镜像构建，再开始使用沙箱。
 
@@ -233,14 +233,14 @@ pnpm run check   # 类型检查 (typecheck) + 单元测试 (vitest) + 编译产�
 
 ### GitHub Actions 发布
 
-分支 push（不含 `dist`）和 PR 自动运行 `pnpm run check`。发布时先更新 `package.json` 版本与 CHANGELOG，提交到 `main`，再推送完全匹配包版本的 `v<版本号>` tag：
+分支 push 和 PR 自动运行 `pnpm run check`。发布时先更新 `package.json` 版本与 CHANGELOG，提交到 `main`，再推送完全匹配包版本的 `v<版本号>` tag：
 
 ```bash
 git tag v<版本号>
 git push origin v<版本号>
 ```
 
-Release 工作流检出该 tag、安装锁定依赖、运行全部检查，并验证打包后的入口和资源文件，再上传 `.tgz`、创建 `dist-v<版本号>` tag。只有更新的稳定版会更新 `dist` 分支；预发布版和旧版本补发不会覆盖它。已存在的 `dist-v*` tag 内容不可更改。失败后可重跑任务，也可在 Actions → Release → Run workflow 填写已存在的源码 tag 补发。工作流已声明 `contents: write`，无需扩大仓库默认 token 权限；仓库须允许运行 GitHub Actions，并允许该工作流写入 `dist` 分支和 tag。
+Release 工作流检出该 tag、安装锁定依赖、运行全部检查，验证打包后的入口和资源文件，再将 `.tgz` 上传至对应的 GitHub Release。配置 npm 可信发布后，同一份安装包会发布到 npm。只有已发布 GitHub Releases 中的最新稳定版可成为 `latest` 并运行 npm 发布任务；重试该版本仍可发布，预发布版和旧版本不会覆盖它。需要使用当前工作流补发时，在 Actions → Release → Run workflow 选择 `main`，填写已存在的源码 tag。工作流已声明上传 Release 所需的 `contents: write`，无需扩大仓库默认 token 权限。详见[发布配置](./docs/publishing.md)。
 
 ## 相关文档
 

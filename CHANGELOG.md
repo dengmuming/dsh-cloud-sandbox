@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Distribute compiled plugins through npm and GitHub Release archives only; remove the precompiled `dist` branch and `dist-v*` tags. Select the latest stable release from published GitHub Releases without depending on Git build refs.
+
 ### Fixed
 - Allow up to five minutes for npm registry processing before failing public-release verification.
 

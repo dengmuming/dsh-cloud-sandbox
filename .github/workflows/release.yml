@@ -25,7 +25,7 @@ jobs:
       tag: ${{ steps.metadata.outputs.tag }}
       archive: ${{ steps.metadata.outputs.archive }}
       version: ${{ steps.metadata.outputs.version }}
-      latest: ${{ steps.dist.outputs.latest }}
+      latest: ${{ steps.channel.outputs.latest }}
     permissions:
       contents: write
     env:
@@ -98,52 +98,38 @@ jobs:
           check('deploy/setup-public-egress-network.sh')
           console.log(`Verified ${pkg.name}@${pkg.version} with built entry points and bundle assets`)
           NODE
-      - name: Publish precompiled Git refs
-        id: dist
-        shell: bash
+      - name: Determine stable release channel
+        id: channel
         run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
-          source_commit=$(git rev-parse HEAD)
-          export GIT_INDEX_FILE="$RUNNER_TEMP/dist.index"
-          export GIT_WORK_TREE="$RUNNER_TEMP/package"
-          git read-tree --empty
-          mapfile -d '' files < <(find "$GIT_WORK_TREE" -mindepth 1 -maxdepth 1 -printf '%f\0')
-          git -c core.autocrlf=false add -- "${files[@]}"
-          tree=$(git write-tree)
-          dist_tag="dist-$RELEASE_TAG"
-          if git rev-parse --verify "refs/tags/$dist_tag" >/dev/null 2>&1; then
-            if [ "$(git rev-parse "refs/tags/$dist_tag^{tree}")" != "$tree" ]; then
-              echo "::error::$dist_tag already exists with different contents; publish a new version"
-              exit 1
-            fi
-            commit=$(git rev-parse "refs/tags/$dist_tag^{commit}")
-          else
-            parents=(-p "$source_commit")
-            if git rev-parse --verify refs/remotes/origin/dist >/dev/null 2>&1; then
-              parents=(-p refs/remotes/origin/dist "${parents[@]}")
-            fi
-            commit=$(git commit-tree "$tree" "${parents[@]}" -m "release[chore]: publish $dist_tag")
-            git tag "$dist_tag" "$commit"
-          fi
-          refs=("refs/tags/$dist_tag")
-          latest=false
-          if [[ "$PACKAGE_VERSION" != *-* ]]; then
-            current=$(git show refs/remotes/origin/dist:package.json 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)
-            if [ -z "$current" ] || { [ "$current" != "$PACKAGE_VERSION" ] && [ "$(printf '%s\n' "$current" "$PACKAGE_VERSION" | sort -V | tail -1)" = "$PACKAGE_VERSION" ]; }; then
-              refs+=("$commit:refs/heads/dist")
-              latest=true
-            elif [ "$current" = "$PACKAGE_VERSION" ]; then
-              latest=true
-            fi
-          fi
-          git push --atomic origin "${refs[@]}"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          const stableVersion = (tag) => /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(tag)?.slice(1).map(BigInt)
+          const compare = (left, right) => {
+            for (let i = 0; i < 3; i++) {
+              if (left[i] !== right[i]) return left[i] > right[i] ? 1 : -1
+            }
+            return 0
+          }
+          const candidate = stableVersion(`v${process.env.PACKAGE_VERSION}`)
+          let latest = false
+          if (candidate) {
+            const pages = JSON.parse(execFileSync('gh', [
+              'api', '--paginate', '--slurp',
+              `repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`,
+            ], { encoding: 'utf8' }))
+            if (!Array.isArray(pages) || !pages.every(Array.isArray)) throw new Error('Invalid GitHub releases response')
+            latest = pages.flat().every((release) => {
+              if (release.draft || release.prerelease || !release.published_at) return true
+              const version = stableVersion(release.tag_name)
+              return !version || compare(candidate, version) >= 0
+            })
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `latest=${latest}\n`)
+          NODE
       - name: Publish GitHub Release
         env:
-          LATEST: ${{ steps.dist.outputs.latest }}
+          LATEST: ${{ steps.channel.outputs.latest }}
         run: |
           set -euo pipefail
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

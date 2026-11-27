@@ -1,10 +1,10 @@
 # Publishing and marketplace submissions
 
-`package.json` owns the version. Push a matching `v<version>` source tag after updating the changelog and committing the release. The Release workflow checks, builds, and verifies the package before publishing its GitHub Release archive, immutable `dist-v<version>` tag, and newest stable `dist` branch.
+`package.json` owns the version. Push a matching `v<version>` source tag after updating the changelog and committing the release. The Release workflow checks, builds, and verifies the package before uploading its GitHub Release archive and publishing the same archive to npm when trusted publishing is enabled. Source `v*` tags are the only release tags; precompiled Git branches and tags are no longer published.
 
 ## npm publication
 
-Publish the exact GitHub Release `.tgz`, so npm and Git installations contain the same compiled entry points, localized guides, and Dockerfile. The first public publication uses an authenticated npm maintainer account:
+Publish the exact GitHub Release `.tgz`, so npm and Release-archive installations contain the same compiled entry points, localized guides, and Dockerfile. The first public publication uses an authenticated npm maintainer account:
 
 ```bash
 npm login --registry=https://registry.npmjs.org/
@@ -23,7 +23,9 @@ For subsequent automatic stable releases, configure a GitHub Actions trusted pub
 
 Then create the GitHub repository Actions variable `NPM_TRUSTED_PUBLISHING` with value `true`. Without it, GitHub releases still succeed and the npm job is skipped. With it, the workflow publishes only the newest stable release using OIDC, with no npm token stored in the repository. Configure the trusted publisher when ready to publish: npm requires its first successful publication within two days of configuration.
 
-The npm job installs npm 11, downloads the verified Release archive, and checks any existing npm version against that archive's SHA-512 integrity. Identical versions are skipped; different bytes fail rather than replacing an immutable npm version. After publishing, the job retries public registry checks for up to five minutes until the exact version, `latest` tag, and downloadable tarball match the release archive. A temporary `0.0.0-stage` placeholder is not a successful release. To retry the latest stable release, run the Release workflow manually with its existing source tag. Older releases and prereleases do not run this npm job.
+The workflow compares the candidate version numerically with all published stable GitHub Releases, including paginated results. Drafts, prereleases, and non-version release tags do not select the stable channel. A version at least as new as every published stable release is eligible for `latest` and npm publication, including a retry of the current latest version. Older releases and prereleases still receive GitHub Release archives but do not run the npm job.
+
+The npm job installs npm 11, downloads the verified Release archive, and checks any existing npm version against that archive's SHA-512 integrity. Identical versions are skipped; different bytes fail rather than replacing an immutable npm version. After publishing, the job retries public registry checks for up to five minutes until the exact version, `latest` tag, and downloadable tarball match the release archive. A temporary `0.0.0-stage` placeholder is not a successful release. To retry with the current workflow, run Release manually from `main` with the existing source tag. Rerunning a historical workflow run uses its original workflow definition.
 
 ## Community discovery
 
@@ -35,7 +37,7 @@ DSH accepts the package's SVG icon. The community list's optional `icon` field a
 
 ## Custom DSH indexes
 
-The official reference generator recognizes source version tags, not this repository's `dist-v*` convention. Prefer the npm package as its input. For a Git-only custom index, use the complete 40-character commit SHA of a precompiled `dist-v<version>` tag. Do not point installation entries at `main` or a source `v<version>` tag.
+Use the npm package name `dsh-cloud-sandbox` as the reference generator's input. If maintaining an index directly, point its install entry at the npm package or a compiled GitHub Release archive. Do not point installation entries at `main` or a source `v<version>` tag; those trees omit `dist/`.
 
 Discover's **Add index source** takes the HTTPS URL of `index.json`. The generator's `plugins.txt` takes npm names or repository URLs; these are different inputs.
 

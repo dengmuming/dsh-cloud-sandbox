@@ -68,13 +68,13 @@ Enter the npm package name `dsh-cloud-sandbox` in the Plugin Manager, or install
 dsh plugin --profile desktop add dsh-cloud-sandbox
 ```
 
-For Web, replace `desktop` with `web`. GitHub Releases also provide precompiled packages; the Plugin Manager accepts this Git spec:
+For Web, replace `desktop` with `web`. To pin a version, enter `dsh-cloud-sandbox@0.2.3` in the Plugin Manager, or run:
 
-```text
-https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
+```bash
+dsh plugin --profile desktop add dsh-cloud-sandbox@0.2.3
 ```
 
-`dist` tracks the newest stable release. To pin a version, replace `#dist` with `#dist-v<version>`, or use the download URL of the Release's `dsh-cloud-sandbox-<version>.tgz` asset. `main` and source `v*` tags omit `dist/` and cannot be installed directly. Build the sandbox Docker image separately.
+GitHub Releases also provide precompiled `dsh-cloud-sandbox-<version>.tgz` assets; the Plugin Manager accepts their download URLs. Git installation through the former `dist` branch and `dist-v*` tags is no longer supported; use the npm package or a Release archive instead. `main` and source `v*` tags omit `dist/` and cannot be installed directly. Build the sandbox Docker image separately.
 
 Start Docker first: use Linux containers in Windows Docker Desktop, or start the relevant Docker Engine on Linux/WSL2. After installing the plugin, build the image below before using the sandbox.
 
@@ -233,14 +233,14 @@ pnpm run check   # typecheck + vitest + build
 
 ### GitHub Actions Releases
 
-Branch pushes (except `dist`) and pull requests run `pnpm run check`. To release, update `package.json` and CHANGELOG, commit to `main`, then push a `v<version>` tag matching the package version exactly:
+Branch pushes and pull requests run `pnpm run check`. To release, update `package.json` and CHANGELOG, commit to `main`, then push a `v<version>` tag matching the package version exactly:
 
 ```bash
 git tag v<version>
 git push origin v<version>
 ```
 
-The Release workflow checks out that tag, installs locked dependencies, runs all checks, verifies the packed entry points and assets, uploads the `.tgz`, and creates a `dist-v<version>` tag. Only a newer stable version advances `dist`; prereleases and older releases do not replace it. Existing `dist-v*` contents cannot change. Retry a failed run, or use Actions → Release → Run workflow with an existing source tag. The workflow declares `contents: write`; broader default token permissions are unnecessary. The repository must allow GitHub Actions and workflow writes to the `dist` branch and tags.
+The Release workflow checks out that tag, installs locked dependencies, runs all checks, verifies the packed entry points and assets, and uploads the `.tgz` to its GitHub Release. With npm trusted publishing configured, it publishes the same archive to npm. Only the newest stable version among published GitHub Releases can become `latest` and run the npm job; retries of that version remain eligible, while prereleases and older versions do not replace it. To retry with the current workflow, use Actions → Release → Run workflow from `main` and enter the existing source tag. The workflow declares `contents: write` for Release uploads; broader default token permissions are unnecessary. See [publishing setup](./docs/publishing.md).
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-cloud-sandbox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cloud Linux Docker execution-sandbox runtime plugin for DeepSeek Harness (DSH) with workspace-scoped isolation, safe Skill execution, and multi-tenant fair concurrency queuing.",
   "icon": "./icon.svg",
   "license": "Apache-2.0",
@@ -51,6 +51,7 @@
     "icon.svg",
     "locale/*.json",
     "Dockerfile",
+    "deploy",
     "README.md",
     "README.zh.md",
     "LICENSE",

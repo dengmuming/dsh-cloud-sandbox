@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
+### Added
+- **Preinstalled `pip3` & Document/Data Python Libraries (`Dockerfile`, `src/docker/runtime-pool.ts`, `src/subprocess/docker-subprocess.ts`)**:
+  - Preinstalled `python3-pip` (`pip3`) and common PDF/Office/data libraries (`pymupdf`, `pdfplumber`, `pypdf`, `openpyxl`, `python-docx`, `python-pptx`, `pillow`, `pandas`, `pyyaml`) in the default runtime image.
+  - Configured `PYTHONUSERBASE=/tmp/.local`, `PIP_USER=1`, `PIP_BREAK_SYSTEM_PACKAGES=1`, `/tmp/.local/bin` on default container `PATH`, and `security.tmpfsSizeMb` in `DockerSubprocessRuntime.Config` so runtime `pip3 install` works under `ReadonlyRootfs: true`.
+- **Cloud No-LAN Public-Egress Deployment Scripts (`deploy/`)**:
+  - Added `deploy/setup-public-egress-network.sh`, `deploy/teardown-public-egress-network.sh`, and `deploy/README.md` to provision a hardened Linux Docker bridge (`dsh-sandbox-public`) that blocks RFC1918 LANs, cloud metadata (`169.254.169.254`), host ports, and container-to-container traffic (`enable_icc=false`) while allowing public Internet access.
+- **Environment-Aware Bundle Networking (`cordis.patch.yml`)**:
+  - Added `DSH_SANDBOX_NETWORK_MODE` support: defaults local Desktop/Web bundle sessions to `bridge` while keeping `DSH_SANDBOX_CLOUD_MODE=1` and the low-level SDK fail-closed on `networkMode: 'none'`.
+
 ## [0.1.0] - 2026-11-27
 
 ### Added

@@ -143,14 +143,16 @@ const DockerSubprocessConfigSchema = z.object({
     idleTtlMs: 600_000,
   }),
   security: z.object({
-    networkMode: z.string().default('none').description('Docker network mode (default: none for offline isolation)'),
+    networkMode: z.string().default('none').description('Docker network mode (default: none for offline isolation; set bridge or a custom egress-filtered network for runtime pip3 install)'),
     cpus: z.number().min(0.1).default(2).description('CPU cores limit per container'),
     pidsLimit: z.number().min(16).default(256).description('Maximum process count per container'),
+    tmpfsSizeMb: z.number().min(16).default(256).description('Writable /tmp tmpfs size in MB (increase if installing large Python packages at runtime)'),
     user: z.string().default('1000:1000').description('Non-root UID:GID inside the container'),
   }).default({
     networkMode: 'none',
     cpus: 2,
     pidsLimit: 256,
+    tmpfsSizeMb: 256,
     user: '1000:1000',
   }),
 })

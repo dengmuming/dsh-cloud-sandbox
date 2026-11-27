@@ -68,9 +68,9 @@ docker build -t dsh-cloud-sandbox-runtime:latest .
 
 `dsh-cloud-sandbox` 已声明 `dsh.bundle.patch`（`./cordis.patch.yml`）、图标与中英文元数据，可直接通过 DSH 插件管理器 UI 或 `dsh plugin add <本地目录或包名>` 安装（本地目录安装前需先执行 `pnpm run build` 生成 `dist/`）。
 
-- **本机 Desktop / Web 模式（默认）**：自动信任 DSH `workspaceRegistry` 中已注册的工作区、自动只读挂载 `~/.agents/skills` 与 `~/.dsh/skills`、自动将当前会话上传的文件投递至 `<workspaceRoot>/.dsh-uploads/`，并提供受 DSH 原生审批（`ctx.approval`）与敏感/凭据路径黑名单双门禁保护的 `sandbox_import_file` 工具，经用户点击允许后将宿主机文件安全拷贝入沙箱。
-- **云端多租户锁定模式（`DSH_SANDBOX_CLOUD_MODE=1`）**：自动关闭 `trustRegisteredWorkspaces`、`mountUserSkills`、`allowApprovedHostReadOnly` 与 `sandbox_import_file`，仅保留严格的静态 `allowedBaseDirs` 白名单与按会话隔离的 `<workspaceRoot>/.dsh-uploads/` 附件投递（绝不跨租户共享挂载全局 `$DSH_HOME/attachments`）。
-- **常用环境变量**：`DSH_SANDBOX_IMAGE`、`DSH_SANDBOX_TRANSPORT`、`DSH_SANDBOX_LIFECYCLE`、`DSH_SANDBOX_ALLOWED_DIRS`（逗号分隔）、`DSH_SANDBOX_RO_MOUNTS`（逗号分隔）、`DSH_SANDBOX_CLOUD_MODE=1`、`DSH_SANDBOX_HOST_IMPORT=0`。
+- **本机 Desktop / Web 模式（默认）**：自动信任 DSH `workspaceRegistry` 中已注册的工作区、自动只读挂载 `~/.agents/skills` 与 `~/.dsh/skills`、默认开启 `networkMode: bridge` 以便容器内按需 `pip3`/`npm` 装包、自动将当前会话上传的文件投递至 `<workspaceRoot>/.dsh-uploads/`，并提供受 DSH 原生审批（`ctx.approval`）与敏感/凭据路径黑名单双门禁保护的 `sandbox_import_file` 工具，经用户点击允许后将宿主机文件安全拷贝入沙箱。
+- **云端多租户锁定模式（`DSH_SANDBOX_CLOUD_MODE=1`）**：自动关闭 `trustRegisteredWorkspaces`、`mountUserSkills`、`allowApprovedHostReadOnly` 与 `sandbox_import_file`，默认 `networkMode: none`，仅保留静态 `allowedBaseDirs` 白名单与按会话隔离的 `.dsh-uploads/` 附件投递。若云端需要**封死内网、放通公网**（屏蔽内网段、云元数据 `169.254.169.254`、宿主机端口与容器互访），在 Linux 宿主机执行 `sudo bash deploy/setup-public-egress-network.sh`（详见 [`deploy/README.md`](./deploy/README.md)）并设置 `DSH_SANDBOX_NETWORK_MODE=dsh-sandbox-public`。
+- **常用环境变量**：`DSH_SANDBOX_IMAGE`、`DSH_SANDBOX_TRANSPORT`、`DSH_SANDBOX_LIFECYCLE`、`DSH_SANDBOX_ALLOWED_DIRS`（逗号分隔）、`DSH_SANDBOX_RO_MOUNTS`（逗号分隔）、`DSH_SANDBOX_NETWORK_MODE`（本地默认 `bridge`，云端 `DSH_SANDBOX_CLOUD_MODE=1` 默认 `none`，云端封内网放公网可设为 `dsh-sandbox-public`）、`DSH_SANDBOX_CLOUD_MODE=1`、`DSH_SANDBOX_HOST_IMPORT=0`。
 
 ### 2. 原生 DSH 单 Context 接入
 

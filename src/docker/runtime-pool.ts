@@ -52,7 +52,7 @@ export interface ManagedContainer {
   readonly accessMode: WorkspaceAccessMode
 }
 
-const DEFAULT_CONTAINER_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+const DEFAULT_CONTAINER_PATH = '/tmp/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 const SIGNAL_NAME_BY_EXIT_OFFSET: Record<number, NodeJS.Signals> = {
   1: 'SIGHUP',
   2: 'SIGINT',

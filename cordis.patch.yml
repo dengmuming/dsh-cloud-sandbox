@@ -33,7 +33,7 @@
           queueTimeoutMs: 60000
           idleTtlMs: 600000
         security:
-          networkMode: none
+          networkMode: !!js "process.env.DSH_SANDBOX_NETWORK_MODE || (process.env.DSH_SANDBOX_CLOUD_MODE === '1' ? 'none' : 'bridge')"
           cpus: 2
           pidsLimit: 256
 

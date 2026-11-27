@@ -29,6 +29,7 @@ describe('DSH plugin bundle manifest', () => {
     expect(pkg.files).toContain('cordis.patch.yml')
     expect(pkg.files).toContain('icon.svg')
     expect(pkg.files).toContain('locale/*.json')
+    expect(pkg.files).toContain('deploy')
 
     // Patch file exists, disables local capability providers, inserts sandbox providers,
     // and leaves surface-owned tool rows (tool-bash/tool-pwsh) untouched so web/desktop presets stay isolated.
@@ -42,10 +43,27 @@ describe('DSH plugin bundle manifest', () => {
     expect(patchText).toContain('id: bash-sandbox')
     expect(patchText).toContain('id: pwsh-sandbox')
     expect(patchText).toContain('DSH_SANDBOX_CLOUD_MODE')
+    expect(patchText).toContain('DSH_SANDBOX_NETWORK_MODE')
     expect(patchText).toContain('mountAttachments: false')
     expect(patchText).toContain('stageSessionAttachments: true')
     expect(patchText).not.toContain('id: tool-bash')
     expect(patchText).not.toContain('id: tool-pwsh')
+
+    // Cloud No-LAN public egress deploy scripts and Dockerfile pip3/Python runtime exist and enforce isolation.
+    const setupScript = readFileSync(join(ROOT, 'deploy/setup-public-egress-network.sh'), 'utf8')
+    expect(setupScript).toContain('enable_icc=false')
+    expect(setupScript).toContain('169.254.0.0/16')
+    expect(setupScript).toContain('10.0.0.0/8')
+    expect(setupScript).toContain('172.16.0.0/12')
+    expect(setupScript).toContain('192.168.0.0/16')
+    expect(existsSync(join(ROOT, 'deploy/teardown-public-egress-network.sh'))).toBe(true)
+    expect(existsSync(join(ROOT, 'deploy/README.md'))).toBe(true)
+
+    const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8')
+    expect(dockerfile).toContain('python3-pip')
+    expect(dockerfile).toContain('pymupdf')
+    expect(dockerfile).toContain('openpyxl')
+    expect(dockerfile).toContain('PYTHONUSERBASE=/tmp/.local')
 
     // All bundle plugins expose Schemastery Config schemas for DSH Settings UI.
     expect(dockerSubprocessPlugin.Config).toBeDefined()

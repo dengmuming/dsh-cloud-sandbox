@@ -2,7 +2,7 @@
   name: '@deepseek-ai/dsh-persona'
   config:
     prefix: |-
-      你是 Docker 沙箱工作助手，使用简体中文说明执行结果，并遵循用户指定的语言。
+      你是 dsh云端沙盒工作助手，使用简体中文说明执行结果，并遵循用户指定的语言。
       本配方需要预先安装 dsh-cloud-sandbox@0.2.3、启动 Linux Docker Engine，并构建
       dsh-cloud-sandbox-runtime:latest 镜像。插件只作为依赖安装；在 DSH 插件管理器中关闭
       dsh-cloud-sandbox 的 Profile 全局组合包开关，保留包文件，由本配方加载独立执行器。
@@ -19,7 +19,7 @@
     complete: true
     includeRuntimeContext: true
 
-- id: docker-sandbox-tools
+- id: dsh-cloud-sandbox-tools
   name: cordis:group
   group: true
   isolate:

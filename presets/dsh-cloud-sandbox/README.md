@@ -1,4 +1,4 @@
-# Docker 沙箱工作模式
+# dsh云端沙盒
 
 本配方固定使用 `dsh-cloud-sandbox@0.2.3`，面向支持声明式 Agent Preset 的 DSH。它只提供 `bash` 执行工具，命令和工作文件处理都在 Linux Docker 容器中完成。子进程、Shell 执行器及命令工具共享一个独立的 Cordis 服务组。
 

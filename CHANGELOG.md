@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Distribute compiled plugins through npm and GitHub Release archives only; remove the precompiled `dist` branch and `dist-v*` tags. Select the latest stable release from published GitHub Releases without depending on Git build refs.
 
 ### Added
-- Docker sandbox Agent Preset source with isolated command providers, container-based workspace file processing, offline defaults, and Preset Square listing metadata. Requires the existing 0.2.3 plugin and a prepared Docker runtime image.
+- `dsh-cloud-sandbox` Agent Preset (dsh云端沙盒) source with isolated command providers, container-based workspace file processing, offline defaults, and Preset Square listing metadata. Requires the existing 0.2.3 plugin and a prepared Docker runtime image.
 
 ### Fixed
 - Allow up to five minutes for npm registry processing before failing public-release verification.

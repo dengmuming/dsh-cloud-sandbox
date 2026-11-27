@@ -244,7 +244,7 @@ The Release workflow checks out that tag, installs locked dependencies, runs all
 
 ## Documentation
 
-- [Docker Sandbox Mode Preset](./presets/docker-sandbox/README.md) — optional isolated Bash composition; [download the `.dshpreset`](https://github.com/dengmuming/dsh-cloud-sandbox/releases/download/v0.2.3/docker-sandbox.dshpreset). Requires the 0.2.3 plugin and Docker runtime image; disable the plugin's profile-wide bundle before selecting this Preset.
+- [dsh-cloud-sandbox Preset](./presets/dsh-cloud-sandbox/README.md) — optional isolated Bash composition; [download the `.dshpreset`](https://github.com/dengmuming/dsh-cloud-sandbox/releases/download/v0.2.3/dsh-cloud-sandbox.dshpreset). Requires the 0.2.3 plugin and Docker runtime image; disable the plugin's profile-wide bundle before selecting this Preset.
 - [Publishing and marketplace submissions](https://github.com/dengmuming/dsh-cloud-sandbox/blob/main/docs/publishing.md) — npm publishing identity, automation, and community index entries
 - [README.zh.md](./README.zh.md) — 简体中文文档
 - [AGENTS.md](./AGENTS.md) — Engineering invariants, layout, and agent guidelines

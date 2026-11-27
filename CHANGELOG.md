@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-27
+
+### Fixed
+- Wait for the exact npm version, `latest` tag, and downloadable archive to match the GitHub Release before reporting successful publication; bypass stale registry responses during verification and retry checks.
+
 ## [0.2.2] - 2026-11-27
 
 ### Added

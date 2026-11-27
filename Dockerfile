@@ -1,5 +1,5 @@
 # Default hardened Linux runtime image for dsh-cloud-sandbox.
-# Build: docker build -t dsh-cloud-sandbox-runtime:latest .
+# From the directory containing this Dockerfile: docker build -t dsh-cloud-sandbox-runtime:latest .
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \

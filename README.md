@@ -58,13 +58,7 @@ flowchart TB
 
 ## Quick Start
 
-### 1. Build the Default Runtime Image (Linux)
-
-```bash
-docker build -t dsh-cloud-sandbox-runtime:latest .
-```
-
-### 1.5. Install Directly as a DSH Plugin Bundle
+### 1. Install the DSH Plugin Bundle
 
 `dsh-cloud-sandbox` declares `dsh.bundle.patch` (`./cordis.patch.yml`), icon, and localized metadata, so it can be installed directly via DSH's Plugin Manager UI or `dsh plugin add <path-or-package>` (after running `pnpm run build` for local checkouts).
 
@@ -76,11 +70,55 @@ https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
 
 `dist` tracks the newest stable release. To pin a version, replace `#dist` with `#dist-v<version>`, or use the download URL of the Release's `dsh-cloud-sandbox-<version>.tgz` asset. `main` and source `v*` tags omit `dist/` and cannot be installed directly. Build the sandbox Docker image separately.
 
+Start Docker first: use Linux containers in Windows Docker Desktop, or start the relevant Docker Engine on Linux/WSL2. After installing the plugin, build the image below before using the sandbox.
+
 - **Local Desktop / Web mode (default)**: Automatically trusts workspaces registered in DSH's `workspaceRegistry`, mounts existing user Skill directories (`~/.agents/skills`, `~/.dsh/skills`) read-only, enables `networkMode: bridge` for runtime `pip3`/`npm` installs, stages uploaded session attachments into `<workspaceRoot>/.dsh-uploads/`, and exposes the user-approval-gated `sandbox_import_file` tool (protected by `ctx.approval` + sensitive/credential path denylists) for importing specific host files as safe copies.
 - **Multi-Tenant Cloud lockdown (`DSH_SANDBOX_CLOUD_MODE=1`)**: Disables `trustRegisteredWorkspaces`, `mountUserSkills`, `allowApprovedHostReadOnly`, and `sandbox_import_file`, defaults `networkMode` to `'none'`, and keeps strict static `allowedBaseDirs` + per-session isolated attachment staging into `<workspaceRoot>/.dsh-uploads/`. For cloud deployments that need public Internet access (while blocking LAN, cloud metadata `169.254.169.254`, host ports, and container-to-container traffic), run `sudo bash deploy/setup-public-egress-network.sh` (see [`deploy/README.md`](./deploy/README.md)) and set `DSH_SANDBOX_NETWORK_MODE=dsh-sandbox-public`.
 - **Environment variables**: `DSH_SANDBOX_IMAGE`, `DSH_SANDBOX_TRANSPORT`, `DSH_SANDBOX_LIFECYCLE`, `DSH_SANDBOX_ALLOWED_DIRS` (comma-separated), `DSH_SANDBOX_RO_MOUNTS` (comma-separated), `DSH_SANDBOX_NETWORK_MODE` (defaults to `bridge` locally and `none` when `DSH_SANDBOX_CLOUD_MODE=1`; set `dsh-sandbox-public` for No-LAN cloud public egress), `DSH_SANDBOX_CLOUD_MODE=1`, `DSH_SANDBOX_HOST_IMPORT=0`.
 
-### 2. Standalone DSH Integration (Single Context)
+### 2. Build the Sandbox Image from the Installed Package
+
+The last build argument must name the directory containing `Dockerfile`. The installed package includes it, so the following commands work from any current directory.
+
+**Windows Desktop — CMD:**
+
+```cmd
+docker build -t dsh-cloud-sandbox-runtime:latest "%USERPROFILE%\.dsh\profiles\desktop\node_modules\dsh-cloud-sandbox"
+```
+
+**Windows Desktop — PowerShell:**
+
+```powershell
+docker build -t dsh-cloud-sandbox-runtime:latest "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-cloud-sandbox"
+```
+
+**DSH Web running inside Linux / WSL2 — Bash:**
+
+```bash
+docker build -t dsh-cloud-sandbox-runtime:latest "${DSH_HOME:-$HOME/.dsh}/profiles/web/node_modules/dsh-cloud-sandbox"
+```
+
+These paths use the default DSH home and profiles: `desktop` for Desktop and `web` for Web. Replace the profile directory when using another profile. On Windows with a custom `DSH_HOME`, replace `%USERPROFILE%\.dsh` or `$env:USERPROFILE\.dsh` with that directory. Confirm the selected directory contains `Dockerfile`. When Windows DSH connects to a Docker Engine inside WSL2, build in that distribution using the POSIX path mapped from the Windows plugin installation directory. Build against the same Docker Engine the plugin connects to.
+
+**Build the image from a source checkout:**
+
+```bash
+git clone https://github.com/dengmuming/dsh-cloud-sandbox.git
+cd dsh-cloud-sandbox
+docker build -t dsh-cloud-sandbox-runtime:latest .
+```
+
+Use the trailing `.` only from the source directory containing `Dockerfile`; it means the current directory. If Docker reports `open Dockerfile: no such file or directory`, use the installed package path above or change to the source directory first.
+
+After building, verify that the image exists:
+
+```bash
+docker image inspect dsh-cloud-sandbox-runtime:latest
+```
+
+Once this succeeds, enable the plugin in DSH. If activation previously failed, enable it again or restart DSH.
+
+### 3. Standalone DSH Integration (Single Context)
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
@@ -121,7 +159,7 @@ await ctx.plugin(WorkspaceFencedFileSystem, {
 })
 ```
 
-### 3. Multi-Context Cloud Host Integration
+### 4. Multi-Context Cloud Host Integration
 
 Share **one** host-level `DockerRuntimePool` across every isolated Cordis `Context` so concurrency limits and fair queuing operate globally across the Linux host while keeping this plugin 100% user-agnostic:
 

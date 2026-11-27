@@ -58,13 +58,7 @@ flowchart TB
 
 ## 快速开始
 
-### 1. 构建默认 Linux 运行时镜像
-
-```bash
-docker build -t dsh-cloud-sandbox-runtime:latest .
-```
-
-### 1.5. 作为 DSH 组合包插件直接安装
+### 1. 安装 DSH 组合包插件
 
 `dsh-cloud-sandbox` 已声明 `dsh.bundle.patch`（`./cordis.patch.yml`）、图标与中英文元数据，可直接通过 DSH 插件管理器 UI 或 `dsh plugin add <本地目录或包名>` 安装（本地目录安装前需先执行 `pnpm run build` 生成 `dist/`）。
 
@@ -76,11 +70,55 @@ https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
 
 `dist` 指向最新稳定版。锁定版本时，将 `#dist` 换为 `#dist-v<版本号>`；也可安装该版本 Release 附带的 `dsh-cloud-sandbox-<版本号>.tgz` 下载链接。`main` 和 `v*` 源码 tag 不包含 `dist/`，不适合直接安装。沙箱 Docker 镜像仍需单独构建。
 
+先启动 Docker：Windows Docker Desktop 使用 Linux 容器模式；Linux / WSL2 启动对应的 Docker Engine。安装插件后，完成下面的镜像构建，再开始使用沙箱。
+
 - **本机 Desktop / Web 模式（默认）**：自动信任 DSH `workspaceRegistry` 中已注册的工作区、自动只读挂载 `~/.agents/skills` 与 `~/.dsh/skills`、默认开启 `networkMode: bridge` 以便容器内按需 `pip3`/`npm` 装包、自动将当前会话上传的文件投递至 `<workspaceRoot>/.dsh-uploads/`，并提供受 DSH 原生审批（`ctx.approval`）与敏感/凭据路径黑名单双门禁保护的 `sandbox_import_file` 工具，经用户点击允许后将宿主机文件安全拷贝入沙箱。
 - **云端多租户锁定模式（`DSH_SANDBOX_CLOUD_MODE=1`）**：自动关闭 `trustRegisteredWorkspaces`、`mountUserSkills`、`allowApprovedHostReadOnly` 与 `sandbox_import_file`，默认 `networkMode: none`，仅保留静态 `allowedBaseDirs` 白名单与按会话隔离的 `.dsh-uploads/` 附件投递。若云端需要**封死内网、放通公网**（屏蔽内网段、云元数据 `169.254.169.254`、宿主机端口与容器互访），在 Linux 宿主机执行 `sudo bash deploy/setup-public-egress-network.sh`（详见 [`deploy/README.md`](./deploy/README.md)）并设置 `DSH_SANDBOX_NETWORK_MODE=dsh-sandbox-public`。
 - **常用环境变量**：`DSH_SANDBOX_IMAGE`、`DSH_SANDBOX_TRANSPORT`、`DSH_SANDBOX_LIFECYCLE`、`DSH_SANDBOX_ALLOWED_DIRS`（逗号分隔）、`DSH_SANDBOX_RO_MOUNTS`（逗号分隔）、`DSH_SANDBOX_NETWORK_MODE`（本地默认 `bridge`，云端 `DSH_SANDBOX_CLOUD_MODE=1` 默认 `none`，云端封内网放公网可设为 `dsh-sandbox-public`）、`DSH_SANDBOX_CLOUD_MODE=1`、`DSH_SANDBOX_HOST_IMPORT=0`。
 
-### 2. 原生 DSH 单 Context 接入
+### 2. 从插件安装目录构建沙箱镜像
+
+构建命令最后一个参数必须指向包含 `Dockerfile` 的目录。安装包已经包含 `Dockerfile`，下面的命令可在任意当前目录执行。
+
+**Windows Desktop — CMD：**
+
+```cmd
+docker build -t dsh-cloud-sandbox-runtime:latest "%USERPROFILE%\.dsh\profiles\desktop\node_modules\dsh-cloud-sandbox"
+```
+
+**Windows Desktop — PowerShell：**
+
+```powershell
+docker build -t dsh-cloud-sandbox-runtime:latest "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\dsh-cloud-sandbox"
+```
+
+**Linux / WSL2 内运行的 DSH Web — Bash：**
+
+```bash
+docker build -t dsh-cloud-sandbox-runtime:latest "${DSH_HOME:-$HOME/.dsh}/profiles/web/node_modules/dsh-cloud-sandbox"
+```
+
+这些路径使用默认的 DSH home 和 profile：Desktop 为 `desktop`，Web 为 `web`。使用其他 profile 时替换目录名；Windows 配置了 `DSH_HOME` 时，将 `%USERPROFILE%\.dsh` 或 `$env:USERPROFILE\.dsh` 替换为实际目录。先确认该目录内存在 `Dockerfile`。Windows DSH 连接纯 WSL2 Docker Engine 时，应在对应的 WSL 发行版中构建，并使用 Windows 插件安装目录映射后的 POSIX 路径。构建所用的 Docker Engine 必须与插件连接的 Engine 一致。
+
+**从源码构建镜像：**
+
+```bash
+git clone https://github.com/dengmuming/dsh-cloud-sandbox.git
+cd dsh-cloud-sandbox
+docker build -t dsh-cloud-sandbox-runtime:latest .
+```
+
+只有在包含 `Dockerfile` 的源码目录内执行时，才使用末尾的 `.`；它表示当前目录。若看到 `open Dockerfile: no such file or directory`，请改用上面的插件安装目录，或先切换到源码目录。
+
+构建完成后验证镜像存在：
+
+```bash
+docker image inspect dsh-cloud-sandbox-runtime:latest
+```
+
+命令成功后，在 DSH 中启用插件；若之前启用失败，重新启用或重启 DSH。
+
+### 3. 原生 DSH 单 Context 接入
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
@@ -121,7 +159,7 @@ await ctx.plugin(WorkspaceFencedFileSystem, {
 })
 ```
 
-### 3. 云端多 Context 宿主机共享池接入
+### 4. 云端多 Context 宿主机共享池接入
 
 在 Host 启动阶段创建**唯一**的 `DockerRuntimePool`，并注入到每个独立 `Context` 中，从而在保持本插件零用户属性的同时实现全宿主机跨目录并发限流与公平排队：
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Document installed-package Docker build paths for Windows CMD, PowerShell, and Linux/WSL2, including profile selection, source-checkout context, and image verification. Localized plugin details select the matching README.
+
 ## [0.2.1] - 2026-11-27
 
 ### Added

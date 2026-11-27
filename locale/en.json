@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Cloud Docker Sandbox",
+    "detail": "README.md",
     "description": "Isolate agent commands, terminals, and Skill scripts inside hardened Linux/WSL2 Docker containers with per-workspace fair concurrency queuing."
   }
 }

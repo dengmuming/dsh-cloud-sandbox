@@ -62,7 +62,13 @@ flowchart TB
 
 `dsh-cloud-sandbox` declares `dsh.bundle.patch` (`./cordis.patch.yml`), icon, and localized metadata, so it can be installed directly via DSH's Plugin Manager UI or `dsh plugin add <path-or-package>` (after running `pnpm run build` for local checkouts).
 
-After a GitHub Release is published, paste this precompiled Git spec into the Plugin Manager to install without a build:
+Enter the npm package name `dsh-cloud-sandbox` in the Plugin Manager, or install the precompiled package from the CLI:
+
+```bash
+dsh plugin --profile desktop add dsh-cloud-sandbox
+```
+
+For Web, replace `desktop` with `web`. GitHub Releases also provide precompiled packages; the Plugin Manager accepts this Git spec:
 
 ```text
 https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
@@ -238,6 +244,7 @@ The Release workflow checks out that tag, installs locked dependencies, runs all
 
 ## Documentation
 
+- [Publishing and marketplace submissions](https://github.com/dengmuming/dsh-cloud-sandbox/blob/main/docs/publishing.md) — npm publishing identity, automation, and community index entries
 - [README.zh.md](./README.zh.md) — 简体中文文档
 - [AGENTS.md](./AGENTS.md) — Engineering invariants, layout, and agent guidelines
 - [SECURITY.md](./SECURITY.md) — Threat model, container hardening, and Skill vs. Plugin boundaries

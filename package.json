@@ -1,9 +1,25 @@
 {
   "name": "dsh-cloud-sandbox",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Cloud Linux Docker execution-sandbox runtime plugin for DeepSeek Harness (DSH) with workspace-scoped isolation, safe Skill execution, and multi-tenant fair concurrency queuing.",
   "icon": "./icon.svg",
   "license": "Apache-2.0",
+  "author": {
+    "name": "dengmuming",
+    "url": "https://github.com/dengmuming"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dengmuming/dsh-cloud-sandbox.git"
+  },
+  "homepage": "https://github.com/dengmuming/dsh-cloud-sandbox#readme",
+  "bugs": {
+    "url": "https://github.com/dengmuming/dsh-cloud-sandbox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.19.0",
@@ -66,7 +82,10 @@
     "sandbox",
     "cordis",
     "ai-agent",
-    "linux"
+    "linux",
+    "windows",
+    "wsl2",
+    "security"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

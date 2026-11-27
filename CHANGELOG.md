@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-27
+
+### Added
+- Public package repository, author, homepage, issue tracker, and npm publishing metadata for plugin discovery.
+- Optional npm trusted publishing in the Release workflow, reusing the verified GitHub Release archive and checking immutable npm versions by integrity before retrying.
+
 ### Fixed
 - Document installed-package Docker build paths for Windows CMD, PowerShell, and Linux/WSL2, including profile selection, source-checkout context, and image verification. Localized plugin details select the matching README.
 

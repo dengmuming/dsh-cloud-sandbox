@@ -62,7 +62,13 @@ flowchart TB
 
 `dsh-cloud-sandbox` 已声明 `dsh.bundle.patch`（`./cordis.patch.yml`）、图标与中英文元数据，可直接通过 DSH 插件管理器 UI 或 `dsh plugin add <本地目录或包名>` 安装（本地目录安装前需先执行 `pnpm run build` 生成 `dist/`）。
 
-GitHub Release 发布后，插件管理器可填写以下预编译地址，无需在安装时构建：
+在插件管理器中填写 npm 包名 `dsh-cloud-sandbox`，或通过命令行安装预编译包：
+
+```bash
+dsh plugin --profile desktop add dsh-cloud-sandbox
+```
+
+Web 模式将 `desktop` 换为 `web`。GitHub Release 也提供预编译包，插件管理器可填写以下地址：
 
 ```text
 https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
@@ -238,6 +244,7 @@ Release 工作流检出该 tag、安装锁定依赖、运行全部检查，并�
 
 ## 相关文档
 
+- [发布与市场收录](https://github.com/dengmuming/dsh-cloud-sandbox/blob/main/docs/publishing.md) — npm 发布身份、自动发布和社区索引条目
 - [README.md](./README.md) — English documentation
 - [AGENTS.md](./AGENTS.md) — 工程不变量、目录结构与 AI 协作开发规范
 - [SECURITY.md](./SECURITY.md) — 威胁模型、容器安全加固基线与 Skill / Plugin 边界说明

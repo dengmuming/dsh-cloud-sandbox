@@ -68,6 +68,14 @@ docker build -t dsh-cloud-sandbox-runtime:latest .
 
 `dsh-cloud-sandbox` 已声明 `dsh.bundle.patch`（`./cordis.patch.yml`）、图标与中英文元数据，可直接通过 DSH 插件管理器 UI 或 `dsh plugin add <本地目录或包名>` 安装（本地目录安装前需先执行 `pnpm run build` 生成 `dist/`）。
 
+GitHub Release 发布后，插件管理器可填写以下预编译地址，无需在安装时构建：
+
+```text
+https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
+```
+
+`dist` 指向最新稳定版。锁定版本时，将 `#dist` 换为 `#dist-v<版本号>`；也可安装该版本 Release 附带的 `dsh-cloud-sandbox-<版本号>.tgz` 下载链接。`main` 和 `v*` 源码 tag 不包含 `dist/`，不适合直接安装。沙箱 Docker 镜像仍需单独构建。
+
 - **本机 Desktop / Web 模式（默认）**：自动信任 DSH `workspaceRegistry` 中已注册的工作区、自动只读挂载 `~/.agents/skills` 与 `~/.dsh/skills`、默认开启 `networkMode: bridge` 以便容器内按需 `pip3`/`npm` 装包、自动将当前会话上传的文件投递至 `<workspaceRoot>/.dsh-uploads/`，并提供受 DSH 原生审批（`ctx.approval`）与敏感/凭据路径黑名单双门禁保护的 `sandbox_import_file` 工具，经用户点击允许后将宿主机文件安全拷贝入沙箱。
 - **云端多租户锁定模式（`DSH_SANDBOX_CLOUD_MODE=1`）**：自动关闭 `trustRegisteredWorkspaces`、`mountUserSkills`、`allowApprovedHostReadOnly` 与 `sandbox_import_file`，默认 `networkMode: none`，仅保留静态 `allowedBaseDirs` 白名单与按会话隔离的 `.dsh-uploads/` 附件投递。若云端需要**封死内网、放通公网**（屏蔽内网段、云元数据 `169.254.169.254`、宿主机端口与容器互访），在 Linux 宿主机执行 `sudo bash deploy/setup-public-egress-network.sh`（详见 [`deploy/README.md`](./deploy/README.md)）并设置 `DSH_SANDBOX_NETWORK_MODE=dsh-sandbox-public`。
 - **常用环境变量**：`DSH_SANDBOX_IMAGE`、`DSH_SANDBOX_TRANSPORT`、`DSH_SANDBOX_LIFECYCLE`、`DSH_SANDBOX_ALLOWED_DIRS`（逗号分隔）、`DSH_SANDBOX_RO_MOUNTS`（逗号分隔）、`DSH_SANDBOX_NETWORK_MODE`（本地默认 `bridge`，云端 `DSH_SANDBOX_CLOUD_MODE=1` 默认 `none`，云端封内网放公网可设为 `dsh-sandbox-public`）、`DSH_SANDBOX_CLOUD_MODE=1`、`DSH_SANDBOX_HOST_IMPORT=0`。
@@ -178,6 +186,17 @@ await dockerPool.initialize()
 pnpm install
 pnpm run check   # 类型检查 (typecheck) + 单元测试 (vitest) + 编译产物 (build)
 ```
+
+### GitHub Actions 发布
+
+分支 push（不含 `dist`）和 PR 自动运行 `pnpm run check`。发布时先更新 `package.json` 版本与 CHANGELOG，提交到 `main`，再推送完全匹配包版本的 `v<版本号>` tag：
+
+```bash
+git tag v<版本号>
+git push origin v<版本号>
+```
+
+Release 工作流检出该 tag、安装锁定依赖、运行全部检查，并验证打包后的入口和资源文件，再上传 `.tgz`、创建 `dist-v<版本号>` tag。只有更新的稳定版会更新 `dist` 分支；预发布版和旧版本补发不会覆盖它。已存在的 `dist-v*` tag 内容不可更改。失败后可重跑任务，也可在 Actions → Release → Run workflow 填写已存在的源码 tag 补发。工作流已声明 `contents: write`，无需扩大仓库默认 token 权限；仓库须允许运行 GitHub Actions，并允许该工作流写入 `dist` 分支和 tag。
 
 ## 相关文档
 

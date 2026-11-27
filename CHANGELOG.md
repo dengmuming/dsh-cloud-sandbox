@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- GitHub Actions CI for branch pushes and pull requests, plus source-tag releases that run all checks, upload a precompiled `.tgz`, and publish immutable `dist-v*` tags. The `dist` branch tracks the newest stable release.
+
 ## [0.2.0] - 2026-11-27
 
 ### Added

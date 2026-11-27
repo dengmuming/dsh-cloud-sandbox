@@ -68,6 +68,14 @@ docker build -t dsh-cloud-sandbox-runtime:latest .
 
 `dsh-cloud-sandbox` declares `dsh.bundle.patch` (`./cordis.patch.yml`), icon, and localized metadata, so it can be installed directly via DSH's Plugin Manager UI or `dsh plugin add <path-or-package>` (after running `pnpm run build` for local checkouts).
 
+After a GitHub Release is published, paste this precompiled Git spec into the Plugin Manager to install without a build:
+
+```text
+https://github.com/dengmuming/dsh-cloud-sandbox.git#dist
+```
+
+`dist` tracks the newest stable release. To pin a version, replace `#dist` with `#dist-v<version>`, or use the download URL of the Release's `dsh-cloud-sandbox-<version>.tgz` asset. `main` and source `v*` tags omit `dist/` and cannot be installed directly. Build the sandbox Docker image separately.
+
 - **Local Desktop / Web mode (default)**: Automatically trusts workspaces registered in DSH's `workspaceRegistry`, mounts existing user Skill directories (`~/.agents/skills`, `~/.dsh/skills`) read-only, enables `networkMode: bridge` for runtime `pip3`/`npm` installs, stages uploaded session attachments into `<workspaceRoot>/.dsh-uploads/`, and exposes the user-approval-gated `sandbox_import_file` tool (protected by `ctx.approval` + sensitive/credential path denylists) for importing specific host files as safe copies.
 - **Multi-Tenant Cloud lockdown (`DSH_SANDBOX_CLOUD_MODE=1`)**: Disables `trustRegisteredWorkspaces`, `mountUserSkills`, `allowApprovedHostReadOnly`, and `sandbox_import_file`, defaults `networkMode` to `'none'`, and keeps strict static `allowedBaseDirs` + per-session isolated attachment staging into `<workspaceRoot>/.dsh-uploads/`. For cloud deployments that need public Internet access (while blocking LAN, cloud metadata `169.254.169.254`, host ports, and container-to-container traffic), run `sudo bash deploy/setup-public-egress-network.sh` (see [`deploy/README.md`](./deploy/README.md)) and set `DSH_SANDBOX_NETWORK_MODE=dsh-sandbox-public`.
 - **Environment variables**: `DSH_SANDBOX_IMAGE`, `DSH_SANDBOX_TRANSPORT`, `DSH_SANDBOX_LIFECYCLE`, `DSH_SANDBOX_ALLOWED_DIRS` (comma-separated), `DSH_SANDBOX_RO_MOUNTS` (comma-separated), `DSH_SANDBOX_NETWORK_MODE` (defaults to `bridge` locally and `none` when `DSH_SANDBOX_CLOUD_MODE=1`; set `dsh-sandbox-public` for No-LAN cloud public egress), `DSH_SANDBOX_CLOUD_MODE=1`, `DSH_SANDBOX_HOST_IMPORT=0`.
@@ -178,6 +186,17 @@ await dockerPool.initialize()
 pnpm install
 pnpm run check   # typecheck + vitest + build
 ```
+
+### GitHub Actions Releases
+
+Branch pushes (except `dist`) and pull requests run `pnpm run check`. To release, update `package.json` and CHANGELOG, commit to `main`, then push a `v<version>` tag matching the package version exactly:
+
+```bash
+git tag v<version>
+git push origin v<version>
+```
+
+The Release workflow checks out that tag, installs locked dependencies, runs all checks, verifies the packed entry points and assets, uploads the `.tgz`, and creates a `dist-v<version>` tag. Only a newer stable version advances `dist`; prereleases and older releases do not replace it. Existing `dist-v*` contents cannot change. Retry a failed run, or use Actions → Release → Run workflow with an existing source tag. The workflow declares `contents: write`; broader default token permissions are unnecessary. The repository must allow GitHub Actions and workflow writes to the `dist` branch and tags.
 
 ## Documentation
 

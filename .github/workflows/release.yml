@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing source tag to build (must match package.json)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+          cache: true
+      - name: Validate source tag
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+          const tag = process.env.RELEASE_TAG
+          const version = '(0|[1-9][0-9]*)'
+          const identifier = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          const semver = new RegExp(`^v${version}\\.${version}\\.${version}(?:-${identifier}(?:\\.${identifier})*)?$`)
+          if (!semver.test(tag) || tag !== `v${pkg.version}`) {
+            throw new Error(`Tag ${tag} must be v<package.json version> (${pkg.version})`)
+          }
+          const source = execFileSync('git', ['rev-parse', `refs/tags/${tag}^{commit}`], { encoding: 'utf8' }).trim()
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          if (source !== head) throw new Error('Checkout does not match the source tag')
+          appendFileSync(process.env.GITHUB_ENV, `PACKAGE_VERSION=${pkg.version}\nARCHIVE=${pkg.name}-${pkg.version}.tgz\n`)
+          NODE
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - name: Pack and verify installable files
+        run: |
+          mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/package"
+          pnpm pack --pack-destination "$RUNNER_TEMP/release"
+          tar -xzf "$RUNNER_TEMP/release/$ARCHIVE" -C "$RUNNER_TEMP/package" --strip-components=1
+          PACKAGE_DIR="$RUNNER_TEMP/package" node --input-type=module <<'NODE'
+          import { readFileSync, statSync } from 'node:fs'
+          import { resolve, relative, isAbsolute } from 'node:path'
+          const root = process.env.PACKAGE_DIR
+          const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+          const check = (path) => {
+            const file = resolve(root, path)
+            const local = relative(root, file)
+            if (local.startsWith('..') || isAbsolute(local) || !statSync(file).isFile()) {
+              throw new Error(`Missing or invalid packaged file: ${path}`)
+            }
+          }
+          const walk = (value) => {
+            if (typeof value === 'string') {
+              if (value.includes('*')) {
+                for (const locale of ['en', 'zh']) check(value.replaceAll('*', locale))
+              } else check(value)
+            } else for (const item of Object.values(value)) walk(item)
+          }
+          walk(pkg.exports)
+          check(pkg.main)
+          check(pkg.types)
+          check(pkg.dsh.bundle.patch)
+          check(pkg.icon)
+          check('Dockerfile')
+          check('deploy/setup-public-egress-network.sh')
+          console.log(`Verified ${pkg.name}@${pkg.version} with built entry points and bundle assets`)
+          NODE
+      - name: Publish precompiled Git refs
+        id: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags
+          source_commit=$(git rev-parse HEAD)
+          export GIT_INDEX_FILE="$RUNNER_TEMP/dist.index"
+          export GIT_WORK_TREE="$RUNNER_TEMP/package"
+          git read-tree --empty
+          mapfile -d '' files < <(find "$GIT_WORK_TREE" -mindepth 1 -maxdepth 1 -printf '%f\0')
+          git -c core.autocrlf=false add -- "${files[@]}"
+          tree=$(git write-tree)
+          dist_tag="dist-$RELEASE_TAG"
+          if git rev-parse --verify "refs/tags/$dist_tag" >/dev/null 2>&1; then
+            if [ "$(git rev-parse "refs/tags/$dist_tag^{tree}")" != "$tree" ]; then
+              echo "::error::$dist_tag already exists with different contents; publish a new version"
+              exit 1
+            fi
+            commit=$(git rev-parse "refs/tags/$dist_tag^{commit}")
+          else
+            parents=(-p "$source_commit")
+            if git rev-parse --verify refs/remotes/origin/dist >/dev/null 2>&1; then
+              parents=(-p refs/remotes/origin/dist "${parents[@]}")
+            fi
+            commit=$(git commit-tree "$tree" "${parents[@]}" -m "release[chore]: publish $dist_tag")
+            git tag "$dist_tag" "$commit"
+          fi
+          refs=("refs/tags/$dist_tag")
+          latest=false
+          if [[ "$PACKAGE_VERSION" != *-* ]]; then
+            current=$(git show refs/remotes/origin/dist:package.json 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)
+            if [ -z "$current" ] || { [ "$current" != "$PACKAGE_VERSION" ] && [ "$(printf '%s\n' "$current" "$PACKAGE_VERSION" | sort -V | tail -1)" = "$PACKAGE_VERSION" ]; }; then
+              refs+=("$commit:refs/heads/dist")
+              latest=true
+            elif [ "$current" = "$PACKAGE_VERSION" ]; then
+              latest=true
+            fi
+          fi
+          git push --atomic origin "${refs[@]}"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+      - name: Publish GitHub Release
+        env:
+          LATEST: ${{ steps.dist.outputs.latest }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            flags=(--latest="$LATEST")
+            if [[ "$PACKAGE_VERSION" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "$RELEASE_TAG" --generate-notes "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/release/$ARCHIVE" \
+            --repo "$GITHUB_REPOSITORY" --clobber

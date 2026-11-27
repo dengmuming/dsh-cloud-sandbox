@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Allow up to five minutes for npm registry processing before failing public-release verification.
+
 ## [0.2.3] - 2026-11-27
 
 ### Fixed

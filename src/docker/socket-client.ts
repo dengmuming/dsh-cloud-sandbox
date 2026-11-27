@@ -105,7 +105,7 @@ export function buildHardenedContainerPayload(request: DockerContainerCreateRequ
   const tmpfsSizeMb = sec.tmpfsSizeMb ?? DEFAULT_TMPFS_SIZE_MB
   const tmpfsFlags = sec.tmpfsNoExec
     ? `rw,nosuid,nodev,noexec,size=${tmpfsSizeMb}m`
-    : `rw,nosuid,nodev,size=${tmpfsSizeMb}m`
+    : `rw,nosuid,nodev,exec,size=${tmpfsSizeMb}m`
 
   const capDrop = Array.from(new Set(['ALL', ...(sec.capDrop ?? [])]))
   const securityOpt = Array.from(new Set(['no-new-privileges:true', ...(sec.securityOpt ?? [])]))

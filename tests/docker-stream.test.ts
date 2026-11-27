@@ -16,6 +16,15 @@ function dockerFrame(streamType: 1 | 2, text: string): Buffer {
 }
 
 describe('Docker stream demuxing, hardening payload, and BoundedStreamCollector', () => {
+  it('explicitly permits native extensions on tmpfs unless noexec is requested', () => {
+    for (const security of [undefined, { tmpfsNoExec: false }]) {
+      const payload = buildHardenedContainerPayload({ image: 'sandbox:test', cmd: ['sleep', 'infinity'],
+        workingDir: '/workspace', mounts: [], labels: {}, ...(security ? { security } : {}) })
+      const hostConfig = payload.HostConfig as Record<string, unknown>
+      expect(hostConfig.Tmpfs).toEqual({ '/tmp': 'rw,nosuid,nodev,exec,size=256m' })
+    }
+  })
+
   it('demultiplexes Docker 8-byte framed streams across arbitrary 1-byte TCP splits', async () => {
     const raw = new PassThrough()
     const stdout = new PassThrough()

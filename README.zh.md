@@ -244,6 +244,7 @@ Release 工作流检出该 tag、安装锁定依赖、运行全部检查，验�
 
 ## 相关文档
 
+- [Docker 沙箱工作模式配方](./presets/docker-sandbox/README.md) — 独立的 Bash 工具组合；[下载 `.dshpreset`](https://github.com/dengmuming/dsh-cloud-sandbox/releases/download/v0.2.3/docker-sandbox.dshpreset)。需预先安装 0.2.3 插件与 Docker 运行镜像，并关闭插件的 Profile 全局组合包开关。
 - [发布与市场收录](https://github.com/dengmuming/dsh-cloud-sandbox/blob/main/docs/publishing.md) — npm 发布身份、自动发布和社区索引条目
 - [README.md](./README.md) — English documentation
 - [AGENTS.md](./AGENTS.md) — 工程不变量、目录结构与 AI 协作开发规范

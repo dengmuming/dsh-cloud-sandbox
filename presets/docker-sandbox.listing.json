@@ -1,0 +1,32 @@
+{
+  "presetId": "docker-sandbox",
+  "contentLanguage": "zh-CN",
+  "title": "Docker Sandbox Mode",
+  "description": "Run commands in Docker containers with workspace-fenced file access. Requires the plugin and runtime image to be installed first.",
+  "localizations": {
+    "zh": {
+      "title": "Docker 沙箱工作模式",
+      "description": "在 Docker 容器中执行命令，以工作目录围栏限制文件访问。需预先安装插件和运行镜像。"
+    },
+    "en": {
+      "title": "Docker Sandbox Mode",
+      "description": "Run commands in Docker containers with workspace-fenced file access. Requires the plugin and runtime image to be installed first."
+    },
+    "ja": {
+      "title": "Docker サンドボックスモード",
+      "description": "Docker コンテナーでコマンドを実行し、ファイルアクセスを作業ディレクトリ内に制限します。プラグインと実行用イメージの事前導入が必要です。"
+    },
+    "ru": {
+      "title": "Режим песочницы Docker",
+      "description": "Выполнение команд в контейнерах Docker с доступом к файлам в пределах рабочей папки. Требуется предварительная установка плагина и образа среды выполнения."
+    },
+    "es": {
+      "title": "Modo de entorno aislado Docker",
+      "description": "Ejecuta comandos en contenedores Docker y limita el acceso a archivos al directorio de trabajo. Requiere instalar previamente el plugin y la imagen de ejecución."
+    },
+    "pt": {
+      "title": "Modo de sandbox Docker",
+      "description": "Executa comandos em contêineres Docker e limita o acesso a arquivos ao diretório de trabalho. Requer a instalação prévia do plugin e da imagem de execução."
+    }
+  }
+}

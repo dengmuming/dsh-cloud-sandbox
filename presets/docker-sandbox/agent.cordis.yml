@@ -1,0 +1,68 @@
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: |-
+      你是 Docker 沙箱工作助手，使用简体中文说明执行结果，并遵循用户指定的语言。
+      本配方需要预先安装 dsh-cloud-sandbox@0.2.3、启动 Linux Docker Engine，并构建
+      dsh-cloud-sandbox-runtime:latest 镜像。插件只作为依赖安装；在 DSH 插件管理器中关闭
+      dsh-cloud-sandbox 的 Profile 全局组合包开关，保留包文件，由本配方加载独立执行器。
+      只在当前会话选择的工作目录内处理文件。命令通过 bash 在 Linux Docker 容器中执行；
+      本配方只提供 bash 执行工具；读取、编辑和分析工作文件都通过容器内命令完成。
+      工作目录之外的宿主文件未挂载，不得调用其他宿主工具绕过容器限制。
+      默认断网，不导入宿主文件、不挂载用户 Skill 目录、不允许 danger-full-access。
+      Docker、镜像、依赖或工作目录不可用时，报告原因和准备步骤，不改用宿主执行器。
+      本配方仅配置自己的命令和文件工具，不声明隔离浏览器、MCP、宿主插件或整个 DSH。
+      Windows 用户也使用 Linux bash 语法；命令使用工具报告的工作目录，不猜测容器路径。
+      用 bash 运行容器内的文本工具或 Python 处理工作文件，并检查退出码。
+      不请求通过放宽权限绕过文件围栏；需要其他文件时，请用户先放入所选工作目录。
+      首次运行先用 bash 执行 id -u，确认非 root，再执行任务；网络默认不可用。
+    complete: true
+    includeRuntimeContext: true
+
+- id: docker-sandbox-tools
+  name: cordis:group
+  group: true
+  isolate:
+    subprocess: true
+    shell: true
+  config:
+    - id: docker-subprocess
+      name: 'dsh-cloud-sandbox/subprocess'
+      config:
+        image: !!js "process.env.DSH_SANDBOX_IMAGE || 'dsh-cloud-sandbox-runtime:latest'"
+        transport: auto
+        lifecycle: warm
+        workspace:
+          allowedBaseDirs: !!js "(process.env.DSH_SANDBOX_ALLOWED_DIRS || '').split(',').map(s => s.trim()).filter(Boolean)"
+          trustRegisteredWorkspaces: true
+          mountAttachments: false
+          mountUserSkills: false
+          readOnlyMounts: []
+          pathMode: mirror
+        scheduler:
+          maxActiveContainers: 4
+          maxConcurrentTasks: 4
+          maxConcurrencyPerWorkspace: 2
+          maxQueueSize: 16
+          queueTimeoutMs: 60000
+          idleTtlMs: 600000
+        security:
+          networkMode: none
+          cpus: 2
+          pidsLimit: 128
+          tmpfsSizeMb: 256
+          user: '1000:1000'
+
+    - id: docker-shell
+      name: 'dsh-cloud-sandbox/shell'
+      config:
+        timeoutMs: 60000
+        allowDangerFullAccess: false
+        allowApprovedHostReadOnly: false
+        defaultSandboxMode: workspace-write
+
+    - id: bash-tool
+      name: '@deepseek-ai/dsh-tool-bash'
+      config:
+        enableRunInBackground: false
+        promoteOnTimeout: false
